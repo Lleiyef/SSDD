@@ -7,7 +7,7 @@ import os
 from models import users, User
 
 # Login
-from forms import LoginForm
+from forms import LoginForm, SignupForm
 
 app = Flask(__name__, static_url_path='')
 login_manager = LoginManager()
@@ -28,22 +28,27 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # Si ya está dentro, al index
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-    else:
-        error = None
-        form = LoginForm(None if request.method != 'POST' else request.form)
-        if request.method == "POST" and form.validate():
-            if form.email.data != 'admin@um.es' or form.password.data != 'admin':
-                error = 'Invalid Credentials. Please try again.'
-            else:
-                user = User(1, 'admin', form.email.data.encode('utf-8'),
-                            form.password.data.encode('utf-8'))
-                users.append(user)
-                login_user(user, remember=form.remember_me.data)
-                return redirect(url_for('index'))
+    
+    error = None
+    form = LoginForm(None if request.method != 'POST' else request.form)
+    
+    if request.method == "POST" and form.validate():
+        # 1. Buscamos el usuario en nuestra "base de datos" (la lista users)
+        # Usamos el método estático que arreglamos en models.py
+        user = User.get_user(form.email.data)
+        
+        # 2. Si el usuario existe, comprobamos la contraseña
+        # Nota: encode('utf-8') es necesario porque tu modelo usa hash sobre bytes
+        if user is not None and user.check_password(form.password.data.encode('utf-8')):
+            login_user(user, remember=form.remember_me.data)
+            return redirect(url_for('index'))
+        else:
+            error = 'Credenciales inválidas. Inténtalo de nuevo.'
 
-        return render_template('login.html', form=form,  error=error)
+    return render_template('login.html', form=form,  error=error)
 
 @app.route('/profile')
 @login_required
@@ -63,5 +68,44 @@ def load_user(user_id):
             return user
     return None
 
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    # Si ya está logueado, lo mandamos al inicio
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    form = SignupForm()
+    error = None
+    
+    if request.method == "POST" and form.validate():
+        # 1. Comprobar si el email ya existe en nuestra lista "falsa" de usuarios
+        # (Esto se sustituirá luego por una llamada a la base de datos)
+        existing_user = next((u for u in users if u.email == form.email.data), None)
+        
+        if existing_user:
+            error = 'El email ya está registrado.'
+        else:
+            # 2. Crear el nuevo usuario
+            # Generamos un ID simple basado en la longitud de la lista + 1
+            new_id = len(users) + 1
+            
+            # Creamos el objeto usuario. 
+            # IMPORTANTE: Encodeamos a utf-8 porque tu clase User espera bytes para el hash
+            new_user = User(
+                id=new_id,
+                name=form.name.data,
+                email=form.email.data,
+                password=form.password.data.encode('utf-8')
+            )
+            
+            # 3. Guardar en la "base de datos" (lista en memoria)
+            users.append(new_user)
+            
+            # 4. Loguear al usuario directamente y redirigir
+            login_user(new_user)
+            return redirect(url_for('index'))
+
+    return render_template('signup.html', form=form, error=error)
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5010)))

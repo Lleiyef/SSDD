@@ -22,7 +22,7 @@ class User(UserMixin):
         for user in users:
             if user.email == email:
                 return user
-            return None
+        return None
 
     def __repr__(self):
         return '<User {}>'.format(self.email)
