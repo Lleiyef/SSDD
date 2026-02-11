@@ -5,17 +5,45 @@ option java_package = "es.um.sisdist.backend.grpc";
 
 package es.um.sisdist.backend.grpc;
 
+// Definición del servicio
 service GrpcService
 {
+    // Mantenemos el Ping para pruebas de conexión
     rpc Ping(PingRequest) returns (PingResponse);
+
+    // --- NUEVAS FUNCIONES PARA LLAMACHAT ---
+    
+    // Función para validar login desde el Backend-REST
+    rpc Login(LoginRequest) returns (LoginResponse);
 }
 
-message PingRequest
-{
-	int32 v = 1;
+// --- MENSAJES ---
+
+message PingRequest {
+    int32 v = 1;
 }
 
-message PingResponse
-{
-	int32 v = 1;
+message PingResponse {
+    int32 v = 1;
+}
+
+// Petición de Login (Email y Pass)
+message LoginRequest {
+    string email = 1;
+    string password = 2;
+}
+
+// Respuesta del Login
+message LoginResponse {
+    bool success = 1;      // ¿Login correcto?
+    string token = 2;      // Token JWT (si lo generamos aquí)
+    UserMessage user = 3;  // Datos del usuario si el login fue bien
+}
+
+// Objeto Usuario (Equivalente a tu UserDTO y la tabla de MySQL)
+message UserMessage {
+    string id = 1;
+    string email = 2;
+    string name = 3;
+    int32 visits = 4; // Estadísticas (según especificación)
 }
