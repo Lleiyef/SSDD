@@ -27,33 +27,40 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 
 	@Override
 	public void login(LoginRequest request, StreamObserver<LoginResponse> responseObserver) {
-		// 1. Extraer datos de la petición
+		// [MEJORA] 1. Log de entrada: Vemos quién intenta entrar
+		logger.info("Intento de Login recibido para: " + request.getEmail());
+
+		// 1. Extraer datos
 		String email = request.getEmail();
 		String password = request.getPassword();
 
 		// 2. Lógica de validación (Dummy por ahora)
-		// Simulamos que solo el usuario "test@um.es" con pass "1234" es válido.
-		// OJO: Más adelante aquí llamaremos al DAO para consultar la base de datos
-		// real.
 		boolean success = (email.equals("test@um.es") && password.equals("1234"))
 				|| (email.equals("dsevilla@um.es") && password.equals("admin"));
+
+		// [MEJORA] 2. Log de resultado: Vemos si acertó o falló
+		if (success) {
+			logger.info("Login EXITOSO para usuario: " + email);
+		} else {
+			logger.warning("Login FALLIDO (credenciales incorrectas) para: " + email);
+		}
 
 		// 3. Preparar la respuesta
 		LoginResponse.Builder responseBuilder = LoginResponse.newBuilder()
 				.setSuccess(success);
 
+		// [Token Dummy] Si es correcto, devolvemos datos y token falso
 		if (success) {
-			// Si es correcto, devolvemos datos del usuario y un token falso
 			responseBuilder.setToken("token-falso-12345")
 					.setUser(UserMessage.newBuilder()
 							.setId("1")
 							.setEmail(email)
-							.setName("Usuario Test")
+							.setName("Usuario Test") // Podrías personalizar esto según el email
 							.setVisits(1)
 							.build());
 		}
 
-		// 4. Enviar respuesta y cerrar comunicación
+		// 4. Enviar respuesta
 		responseObserver.onNext(responseBuilder.build());
 		responseObserver.onCompleted();
 	}
