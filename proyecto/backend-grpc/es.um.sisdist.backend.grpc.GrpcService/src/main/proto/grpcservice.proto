@@ -11,10 +11,12 @@ service GrpcService
     // Mantenemos el Ping para pruebas de conexión
     rpc Ping(PingRequest) returns (PingResponse);
 
-    // --- NUEVAS FUNCIONES PARA LLAMACHAT ---
-    
     // Función para validar login desde el Backend-REST
     rpc Login(LoginRequest) returns (LoginResponse);
+
+    // --- NUEVA FUNCIÓN PARA EL CHAT ---
+    // Función para enviar un mensaje a la IA y recibir su respuesta
+    rpc SendPrompt(PromptRequest) returns (PromptResponse);
 }
 
 // --- MENSAJES ---
@@ -46,4 +48,17 @@ message UserMessage {
     string email = 2;
     string name = 3;
     int32 visits = 4; // Estadísticas (según especificación)
+}
+
+// --- NUEVOS MENSAJES PARA EL CHAT ---
+
+// Petición que envía el usuario con su mensaje
+message PromptRequest {
+    string prompt = 1;     // El texto que escribe el usuario
+    // string userid = 2;  // (Opcional) Lo dejaremos preparado para cuando haya JWT
+}
+
+// Respuesta que devuelve el sistema (la IA)
+message PromptResponse {
+    string response = 1;   // El texto que contesta LlamaChat
 }

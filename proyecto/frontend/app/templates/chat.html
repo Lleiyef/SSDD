@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat IA (Entrega Intermedia)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9;}
+        .chat-container { width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0px 0px 10px rgba(0,0,0,0.1); }
+        #chat-box { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; margin-bottom: 15px; background: #fafafa; }
+        .msg { margin: 8px 0; padding: 8px; border-radius: 5px; }
+        .user { background-color: #d1e7dd; color: #0f5132; text-align: right; margin-left: 20%; }
+        .bot { background-color: #e2e3e5; color: #41464c; margin-right: 20%; }
+        .loading { font-style: italic; color: #6c757d; }
+        input { width: 75%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 20%; padding: 10px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0b5ed7; }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <h2>LlamaChat (Simulación)</h2>
+    <div id="chat-box"></div>
+    
+    <div>
+        <input type="text" id="prompt" placeholder="Escribe tu mensaje..." onkeypress="if(event.key === 'Enter') sendMessage()">
+        <button onclick="sendMessage()" id="send-btn">Enviar</button>
+    </div>
+</div>
+
+<script>
+    async function sendMessage() {
+        const promptInput = document.getElementById("prompt");
+        const chatBox = document.getElementById("chat-box");
+        const btn = document.getElementById("send-btn");
+        const text = promptInput.value.trim();
+
+        if (!text) return;
+
+        // 1. Mostrar el mensaje del usuario
+        chatBox.innerHTML += `<div class="msg user"><b>Tú:</b> ${text}</div>`;
+        promptInput.value = "";
+        
+        // Mostrar mensaje de "cargando..."
+        const loadingId = "loading-" + Date.now();
+        chatBox.innerHTML += `<div class="msg bot loading" id="${loadingId}">LlamaChat está pensando... (aprox 5 segs)</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+        
+        // Bloquear input mientras espera
+        promptInput.disabled = true;
+        btn.disabled = true;
+
+        // --- ¡AQUÍ ESTABA EL FALLO! (Cambiado try: por try { ) ---
+        try {
+            // 2. Enviar petición a Flask (/api/send_chat)
+            const response = await fetch('/api/send_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: text })
+            });
+            
+            const data = await response.json();
+            
+            // 3. Quitar mensaje de carga y mostrar respuesta real
+            document.getElementById(loadingId).remove();
+            chatBox.innerHTML += `<div class="msg bot"><b>LlamaChat:</b> ${data.response}</div>`;
+            
+        } catch (error) {
+            document.getElementById(loadingId).remove();
+            chatBox.innerHTML += `<div class="msg bot" style="color:red;"><b>Error:</b> No se pudo conectar con el servidor.</div>`;
+        } finally {
+            // Desbloquear input
+            promptInput.disabled = false;
+            btn.disabled = false;
+            promptInput.focus();
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }
+</script>
+
+</body>
+</html>

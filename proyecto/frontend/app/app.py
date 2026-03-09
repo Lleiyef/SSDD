@@ -1,5 +1,6 @@
 from flask import Flask, render_template, send_from_directory, url_for, request, redirect
 from flask_login import LoginManager, login_manager, current_user, login_user, login_required, logout_user
+from flask import render_template, request, jsonify
 import requests
 import os
 
@@ -107,5 +108,37 @@ def signup():
             return redirect(url_for('index'))
 
     return render_template('signup.html', form=form, error=error)
+
+# 1. Ruta para mostrar la página web del chat
+@app.route('/chat')
+def chat_view():
+    return render_template('chat.html')
+
+# 2. Ruta que recibe el mensaje de JS y llama a tu Backend REST
+@app.route('/api/send_chat', methods=['POST'])
+def api_send_chat():
+    data = request.get_json()
+    prompt = data.get('prompt', '')
+
+    try:
+        # Flask llama a tu servidor Tomcat a través de la red interna de Docker
+        # Fíjate que usamos el nombre del contenedor "backend-rest"
+        url_rest = "http://backend-rest:8080/Service/jaxrs/chat"
+        payload = {"prompt": prompt}
+        
+        # Hacemos la petición y esperamos (los 5 segundos del dummy)
+        rest_response = requests.post(url_rest, json=payload)
+        
+        if rest_response.status_code == 200:
+            # Si va bien, devolvemos el JSON al navegador
+            return jsonify(rest_response.json())
+        else:
+            return jsonify({"response": "Error en el servidor REST"}), 500
+            
+    except Exception as e:
+        return jsonify({"response": f"Error de conexión: {str(e)}"}), 500
+
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5010)))

@@ -1,7 +1,13 @@
 package es.um.sisdist.backend.grpc.impl;
 
 import java.util.logging.Logger;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
+import es.um.sisdist.backend.grpc.PromptRequest;
+import es.um.sisdist.backend.grpc.PromptResponse;
 import es.um.sisdist.backend.grpc.GrpcServiceGrpc;
 import es.um.sisdist.backend.grpc.PingRequest;
 import es.um.sisdist.backend.grpc.PingResponse;
@@ -62,6 +68,51 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 
 		// 4. Enviar respuesta
 		responseObserver.onNext(responseBuilder.build());
+		responseObserver.onCompleted();
+	}
+
+	@Override
+	public void sendPrompt(PromptRequest request, StreamObserver<PromptResponse> responseObserver) {
+		String promptTexto = request.getPrompt();
+		logger.info("gRPC: Recibido prompt del usuario: " + promptTexto);
+
+		String llamaResponse = "";
+		try {
+			// 1. Configurar cliente HTTP para llamar al contenedor Dummy
+			// El contenedor se llama "ssdd-llamachat" y expone el puerto 5020
+			HttpClient client = HttpClient.newHttpClient();
+
+			// Preparamos un JSON básico con la pregunta
+			String jsonBody = "{\"prompt\": \"" + promptTexto.replace("\"", "\\\"") + "\"}";
+
+			// Hacemos la petición POST al contenedor de IA
+			// (Si el profesor indicó una ruta específica como /chat, añádela a la URL)
+			HttpRequest httpRequest = HttpRequest.newBuilder()
+					.uri(URI.create("http://ssdd-llamachat:5020/prompt"))
+					.header("Content-Type", "application/json")
+					.POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+					.build();
+
+			logger.info("gRPC: Enviando petición al contenedor LlamaChat (Dummy)...");
+
+			// 2. Enviar la petición y esperar la respuesta (el dummy tarda ~5 segs)
+			HttpResponse<String> httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+			// La respuesta de LlamaChat se guarda aquí
+			llamaResponse = httpResponse.body();
+			logger.info("gRPC: Respuesta del LlamaChat recibida: " + llamaResponse);
+
+		} catch (Exception e) {
+			logger.severe("gRPC: Error conectando con LlamaChat Dummy: " + e.getMessage());
+			llamaResponse = "Error interno: No se pudo contactar con la IA.";
+		}
+
+		// 3. Empaquetar la respuesta en el formato gRPC y devolverla
+		PromptResponse response = PromptResponse.newBuilder()
+				.setResponse(llamaResponse)
+				.build();
+
+		responseObserver.onNext(response);
 		responseObserver.onCompleted();
 	}
 
