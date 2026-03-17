@@ -111,6 +111,7 @@ def signup():
 
 # 1. Ruta para mostrar la página web del chat
 @app.route('/chat')
+@login_required
 def chat_view():
     return render_template('chat.html')
 
