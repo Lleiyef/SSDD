@@ -1,7 +1,29 @@
 {% extends "base.html" %}
-
 {% block content %}
-<h1 class="title">
-    Welcome, {{current_user.name}}!! {{current_user.email}}
-</h1>
+<div class="row justify-content-center mt-5">
+  <div class="col-md-6">
+    <div class="card shadow">
+      <div class="card-body text-center p-5">
+        <div style="font-size: 80px;">🦙</div>
+        <h2 class="card-title mt-3">¡Hola, {{ current_user.name }}!</h2>
+        <p class="text-muted">Bienvenido a LlamaChat</p>
+        <hr>
+        <div class="text-start mt-3">
+          <p><strong>Nombre:</strong> {{ current_user.name }}</p>
+          <p><strong>Correo:</strong> {{ current_user.email }}</p>
+          <p><strong>Rol:</strong> 
+            {% if current_user.is_admin %}
+              <span class="badge bg-danger">Administrador</span>
+            {% else %}
+              <span class="badge bg-primary">Usuario</span>
+            {% endif %}
+          </p>
+        </div>
+        <hr>
+        <a href="{{ url_for('chat_view') }}" class="btn btn-primary mt-2">Ir al Chat 🦙</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary mt-2">Cerrar sesión</a>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

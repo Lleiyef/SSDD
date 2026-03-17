@@ -26,3 +26,13 @@ class User(UserMixin):
 
     def __repr__(self):
         return '<User {}>'.format(self.email)
+
+# Usuario admin por defecto para usarlo en pruebas
+admin_user = User(
+    id=1,
+    name="Admin",
+    email="admin@admin.com",
+    password="admin".encode('utf-8'),
+    is_admin=True
+)
+users.append(admin_user)
