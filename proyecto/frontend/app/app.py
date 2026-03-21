@@ -121,24 +121,28 @@ def api_send_chat():
     data = request.get_json()
     prompt = data.get('prompt', '')
 
+    if not prompt:
+        return jsonify({"response": "El mensaje no puede estar vacío."}), 400
+
     try:
-        # Flask llama a tu servidor Tomcat a través de la red interna de Docker
-        # Fíjate que usamos el nombre del contenedor "backend-rest"
         url_rest = "http://backend-rest:8080/Service/jaxrs/chat"
         payload = {"prompt": prompt}
         
-        # Hacemos la petición y esperamos (los 5 segundos del dummy)
-        rest_response = requests.post(url_rest, json=payload)
+        rest_response = requests.post(url_rest, json=payload, timeout=30)
         
         if rest_response.status_code == 200:
-            # Si va bien, devolvemos el JSON al navegador
             return jsonify(rest_response.json())
+        elif rest_response.status_code == 503:
+            return jsonify({"response": "El servicio de IA no está disponible en este momento."}), 503
         else:
-            return jsonify({"response": "Error en el servidor REST"}), 500
+            return jsonify({"response": f"Error del servidor ({rest_response.status_code}). Inténtalo de nuevo."}), 500
             
+    except requests.exceptions.Timeout:
+        return jsonify({"response": "La IA está tardando demasiado. Inténtalo de nuevo."}), 504
+    except requests.exceptions.ConnectionError:
+        return jsonify({"response": "No se puede conectar con el servidor. Comprueba que el backend está activo."}), 503
     except Exception as e:
-        return jsonify({"response": f"Error de conexión: {str(e)}"}), 500
-
+        return jsonify({"response": f"Error inesperado: {str(e)}"}), 500
 
 
 if __name__ == '__main__':

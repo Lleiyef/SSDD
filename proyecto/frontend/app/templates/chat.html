@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Chat IA (Entrega Intermedia)</title>
+    <title>LlamaChat</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9;}
         .chat-container { width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0px 0px 10px rgba(0,0,0,0.1); }
@@ -50,7 +50,6 @@
         promptInput.disabled = true;
         btn.disabled = true;
 
-        // --- ¡AQUÍ ESTABA EL FALLO! (Cambiado try: por try { ) ---
         try {
             // 2. Enviar petición a Flask (/api/send_chat)
             const response = await fetch('/api/send_chat', {
