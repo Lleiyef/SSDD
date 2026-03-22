@@ -33,18 +33,20 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 
 	@Override
 	public void login(LoginRequest request, StreamObserver<LoginResponse> responseObserver) {
-		// [MEJORA] 1. Log de entrada: Vemos quién intenta entrar
+		// MEJORA 
+		// 1. Log de entrada Vemos quién intenta entrar
 		logger.info("Intento de Login recibido para: " + request.getEmail());
 
 		// 1. Extraer datos
 		String email = request.getEmail();
 		String password = request.getPassword();
 
-		// 2. Lógica de validación (Dummy por ahora)
+		// 2. Logica de validación (Dummy por ahora)
 		boolean success = (email.equals("test@um.es") && password.equals("1234"))
 				|| (email.equals("dsevilla@um.es") && password.equals("admin"));
 
-		// [MEJORA] 2. Log de resultado: Vemos si acertó o falló
+		// MEJORA
+		// 2. Log de resultado para ver si acertó o falló
 		if (success) {
 			logger.info("Login EXITOSO para usuario: " + email);
 		} else {
@@ -55,7 +57,7 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 		LoginResponse.Builder responseBuilder = LoginResponse.newBuilder()
 				.setSuccess(success);
 
-		// [Token Dummy] Si es correcto, devolvemos datos y token falso
+		// Token Dummy, Si es correcto, devolvemos datos y token falso
 		if (success) {
 			responseBuilder.setToken("token-falso-12345")
 					.setUser(UserMessage.newBuilder()
@@ -86,7 +88,6 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 			String jsonBody = "{\"prompt\": \"" + promptTexto.replace("\"", "\\\"") + "\"}";
 
 			// Hacemos la petición POST al contenedor de IA
-			// (Si el profesor indicó una ruta específica como /chat, añádela a la URL)
 			HttpRequest httpRequest = HttpRequest.newBuilder()
 					.uri(URI.create("http://ssdd-llamachat:5020/prompt"))
 					.header("Content-Type", "application/json")

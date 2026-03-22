@@ -13,10 +13,10 @@ public class TestLogin {
                 .usePlaintext()
                 .build();
 
-        // 2. Crear el "stub" (el cliente)
+        // 2. Crear el stub (el cliente)
         var stub = GrpcServiceGrpc.newBlockingStub(channel);
 
-        // --- PRUEBA 1: Login Correcto ---
+        // PRUEBA 1: Login Correcto
         System.out.println("Enviando credenciales correctas (test@um.es)...");
         LoginRequest requestOk = LoginRequest.newBuilder()
                 .setEmail("test@um.es")
@@ -33,7 +33,7 @@ public class TestLogin {
             System.out.println("Error conectando: " + e.getMessage());
         }
 
-        // --- PRUEBA 2: Login Incorrecto ---
+        // PRUEBA 2: Login Incorrecto
         System.out.println("\nEnviando credenciales malas...");
         LoginRequest requestBad = LoginRequest.newBuilder()
                 .setEmail("hacker@malvado.com")
