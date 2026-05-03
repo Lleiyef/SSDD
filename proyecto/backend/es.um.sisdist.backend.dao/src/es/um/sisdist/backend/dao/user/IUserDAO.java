@@ -10,3 +10,4 @@ public interface IUserDAO
 
     public Optional<User> getUserByEmail(String id);
 }
+
