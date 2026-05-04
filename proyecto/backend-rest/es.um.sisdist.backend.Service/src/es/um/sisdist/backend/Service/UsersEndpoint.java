@@ -1,5 +1,6 @@
 package es.um.sisdist.backend.Service;
 
+import es.um.sisdist.backend.Service.auth.Secured;
 import es.um.sisdist.backend.Service.impl.AppLogicImpl;
 import es.um.sisdist.models.UserDTO;
 import es.um.sisdist.models.UserDTOUtils;
@@ -9,6 +10,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
+@Secured
 @Path("/u")
 public class UsersEndpoint
 {

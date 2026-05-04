@@ -5,7 +5,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Optional;
 
+import es.um.sisdist.backend.dao.DAOFactoryImpl;
+import es.um.sisdist.backend.dao.auth.JwtUtil;
+import es.um.sisdist.backend.dao.models.User;
+import es.um.sisdist.backend.dao.models.utils.UserUtils;
+import es.um.sisdist.backend.dao.user.IUserDAO;
 import es.um.sisdist.backend.grpc.PromptRequest;
 import es.um.sisdist.backend.grpc.PromptResponse;
 import es.um.sisdist.backend.grpc.GrpcServiceGrpc;
@@ -18,10 +24,12 @@ import es.um.sisdist.backend.grpc.UserMessage;
 
 class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 	private Logger logger;
+	private final IUserDAO userDAO;
 
 	public GrpcServiceImpl(Logger logger) {
 		super();
 		this.logger = logger;
+		this.userDAO = new DAOFactoryImpl().createSQLUserDAO();
 	}
 
 	@Override
@@ -33,42 +41,32 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
 
 	@Override
 	public void login(LoginRequest request, StreamObserver<LoginResponse> responseObserver) {
-		// MEJORA 
-		// 1. Log de entrada Vemos quién intenta entrar
 		logger.info("Intento de Login recibido para: " + request.getEmail());
 
-		// 1. Extraer datos
 		String email = request.getEmail();
 		String password = request.getPassword();
 
-		// 2. Logica de validación (Dummy por ahora)
-		boolean success = (email.equals("test@um.es") && password.equals("1234"))
-				|| (email.equals("dsevilla@um.es") && password.equals("admin"));
+		Optional<User> userOpt = userDAO.getUserByEmail(email);
+		boolean success = userOpt.isPresent()
+			&& UserUtils.md5pass(password).equals(userOpt.get().getPassword_hash());
 
-		// MEJORA
-		// 2. Log de resultado para ver si acertó o falló
+		LoginResponse.Builder responseBuilder = LoginResponse.newBuilder().setSuccess(success);
+
 		if (success) {
-			logger.info("Login EXITOSO para usuario: " + email);
+			User u = userOpt.get();
+			String token = JwtUtil.generateToken(u.getId(), u.getEmail());
+			logger.info("Login EXITOSO para: " + email);
+			responseBuilder.setToken(token)
+				.setUser(UserMessage.newBuilder()
+					.setId(u.getId())
+					.setEmail(u.getEmail())
+					.setName(u.getName())
+					.setVisits(u.getVisits())
+					.build());
 		} else {
-			logger.warning("Login FALLIDO (credenciales incorrectas) para: " + email);
+			logger.warning("Login FALLIDO para: " + email);
 		}
 
-		// 3. Preparar la respuesta
-		LoginResponse.Builder responseBuilder = LoginResponse.newBuilder()
-				.setSuccess(success);
-
-		// Token Dummy, Si es correcto, devolvemos datos y token falso
-		if (success) {
-			responseBuilder.setToken("token-falso-12345")
-					.setUser(UserMessage.newBuilder()
-							.setId("1")
-							.setEmail(email)
-							.setName("Usuario Test") // Podrías personalizar esto según el email
-							.setVisits(1)
-							.build());
-		}
-
-		// 4. Enviar respuesta
 		responseObserver.onNext(responseBuilder.build());
 		responseObserver.onCompleted();
 	}

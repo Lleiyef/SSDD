@@ -99,4 +99,13 @@ public class AppLogicImpl
 
         return Optional.empty();
     }
+
+    public boolean createUser(String email, String name, String password)
+    {
+        if (dao.getUserByEmail(email).isPresent())
+            return false;
+
+        User newUser = new User(email, UserUtils.md5pass(password), name, "", 0);
+        return dao.createUser(newUser);
+    }
 }

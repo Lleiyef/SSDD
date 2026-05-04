@@ -8,6 +8,8 @@ public interface IUserDAO
 {
     public Optional<User> getUserById(String id);
 
-    public Optional<User> getUserByEmail(String id);
+    public Optional<User> getUserByEmail(String email);
+
+    public boolean createUser(User user);
 }
 
