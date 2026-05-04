@@ -1,6 +1,7 @@
 package es.um.sisdist.models;
 
 import jakarta.xml.bind.annotation.XmlRootElement;
+import java.util.List;
 
 @XmlRootElement
 public class UserDTO
@@ -9,10 +10,9 @@ public class UserDTO
     private String email;
     private String password;
     private String name;
-
     private String token;
-
     private int visits;
+    private List<String> dialogueIds;
 
     /**
      * @return the id
@@ -109,6 +109,9 @@ public class UserDTO
     {
         this.visits = visits;
     }
+
+    public List<String> getDialogueIds() { return dialogueIds; }
+    public void setDialogueIds(List<String> dialogueIds) { this.dialogueIds = dialogueIds; }
 
     public UserDTO(String id, String email, String password, String name, String tOKEN, int visits)
     {

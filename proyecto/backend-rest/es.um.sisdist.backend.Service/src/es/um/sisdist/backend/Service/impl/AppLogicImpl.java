@@ -3,13 +3,20 @@
  */
 package es.um.sisdist.backend.Service.impl;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import es.um.sisdist.backend.grpc.GrpcServiceGrpc;
 import es.um.sisdist.backend.grpc.PingRequest;
 import es.um.sisdist.backend.dao.DAOFactoryImpl;
 import es.um.sisdist.backend.dao.IDAOFactory;
+import es.um.sisdist.backend.dao.dialogue.IDialogueDAO;
+import es.um.sisdist.backend.dao.message.IMessageDAO;
+import es.um.sisdist.backend.dao.models.Dialogue;
+import es.um.sisdist.backend.dao.models.Message;
 import es.um.sisdist.backend.dao.models.User;
 import es.um.sisdist.backend.dao.models.utils.UserUtils;
 import es.um.sisdist.backend.dao.user.IUserDAO;
@@ -24,6 +31,8 @@ public class AppLogicImpl
 {
     IDAOFactory daoFactory;
     IUserDAO dao;
+    IDialogueDAO dialogueDAO;
+    IMessageDAO messageDAO;
 
     private static final Logger logger = Logger.getLogger(AppLogicImpl.class.getName());
 
@@ -42,6 +51,9 @@ public class AppLogicImpl
             dao = daoFactory.createMongoUserDAO();
         else
             dao = daoFactory.createSQLUserDAO();
+
+        dialogueDAO = daoFactory.createSQLDialogueDAO();
+        messageDAO = daoFactory.createSQLMessageDAO();
 
         var grpcServerName = Optional.ofNullable(System.getenv("GRPC_SERVER"));
         var grpcServerPort = Optional.ofNullable(System.getenv("GRPC_SERVER_PORT"));
@@ -107,5 +119,66 @@ public class AppLogicImpl
 
         User newUser = new User(email, UserUtils.md5pass(password), name, "", 0);
         return dao.createUser(newUser);
+    }
+
+    // --- Dialogue methods ---
+
+    public List<Dialogue> getDialoguesByUser(String userId)
+    {
+        return dialogueDAO.getDialoguesByUser(userId);
+    }
+
+    public List<String> getDialogueIdsByUser(String userId)
+    {
+        return dialogueDAO.getDialoguesByUser(userId)
+            .stream().map(Dialogue::getId).collect(Collectors.toList());
+    }
+
+    public Optional<Dialogue> getDialogueByUserAndName(String userId, String name)
+    {
+        return dialogueDAO.getDialogueByUserAndName(userId, name);
+    }
+
+    public Optional<Dialogue> createDialogue(String userId, String name)
+    {
+        if (dialogueDAO.getDialogueByUserAndName(userId, name).isPresent())
+            return Optional.empty();
+
+        Dialogue d = new Dialogue(
+            UUID.randomUUID().toString(),
+            userId,
+            name,
+            "READY",
+            UUID.randomUUID().toString(),
+            System.currentTimeMillis());
+
+        return dialogueDAO.createDialogue(d) ? Optional.of(d) : Optional.empty();
+    }
+
+    public Optional<Dialogue> createOrGetDialogue(String userId, String name)
+    {
+        return dialogueDAO.getDialogueByUserAndName(userId, name)
+            .or(() -> {
+                Dialogue d = new Dialogue(
+                    UUID.randomUUID().toString(),
+                    userId,
+                    name,
+                    "READY",
+                    UUID.randomUUID().toString(),
+                    System.currentTimeMillis());
+                return dialogueDAO.createDialogue(d) ? Optional.of(d) : Optional.empty();
+            });
+    }
+
+    public boolean deleteDialogue(String userId, String name)
+    {
+        return dialogueDAO.getDialogueByUserAndName(userId, name)
+            .map(d -> dialogueDAO.deleteDialogue(d.getId()))
+            .orElse(false);
+    }
+
+    public List<Message> getMessagesByDialogue(String dialogueId)
+    {
+        return messageDAO.getMessagesByDialogue(dialogueId);
     }
 }

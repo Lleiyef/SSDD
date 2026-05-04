@@ -9,6 +9,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 @Secured
 @Path("/u")
@@ -17,10 +18,16 @@ public class UsersEndpoint
     private AppLogicImpl impl = AppLogicImpl.getInstance();
 
     @GET
-    @Path("/{username}")
+    @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public UserDTO getUserInfo(@PathParam("username") String username)
+    public Response getUserInfo(@PathParam("id") String id)
     {
-        return UserDTOUtils.toDTO(impl.getUserByEmail(username).orElse(null));
+        return impl.getUserById(id)
+            .map(user -> {
+                UserDTO dto = UserDTOUtils.toDTO(user);
+                dto.setDialogueIds(impl.getDialogueIdsByUser(id));
+                return Response.ok(dto).build();
+            })
+            .orElse(Response.status(Response.Status.NOT_FOUND).build());
     }
 }

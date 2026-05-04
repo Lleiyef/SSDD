@@ -26,7 +26,13 @@ public class JwtFilter implements ContainerRequestFilter
             return;
         }
         String token = authHeader.substring(7);
-        if (!JwtUtil.validateToken(token))
+        var claims = JwtUtil.getClaims(token);
+        if (claims.isEmpty())
+        {
             ctx.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
+            return;
+        }
+        // Poner el sub (userId) disponible para los endpoints
+        ctx.setProperty("userId", claims.get().getSubject());
     }
 }
