@@ -6,11 +6,13 @@ package es.um.sisdist.backend.Service.impl;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import es.um.sisdist.backend.grpc.GrpcServiceGrpc;
 import es.um.sisdist.backend.grpc.PingRequest;
+import es.um.sisdist.backend.grpc.PromptRequest;
 import es.um.sisdist.backend.dao.DAOFactoryImpl;
 import es.um.sisdist.backend.dao.IDAOFactory;
 import es.um.sisdist.backend.dao.dialogue.IDialogueDAO;
@@ -29,6 +31,8 @@ import io.grpc.ManagedChannelBuilder;
  */
 public class AppLogicImpl
 {
+    public enum PromptSubmitStatus { OK, NOT_FOUND, NOT_READY, WRONG_TOKEN }
+
     IDAOFactory daoFactory;
     IUserDAO dao;
     IDialogueDAO dialogueDAO;
@@ -180,5 +184,63 @@ public class AppLogicImpl
     public List<Message> getMessagesByDialogue(String dialogueId)
     {
         return messageDAO.getMessagesByDialogue(dialogueId);
+    }
+
+    public PromptSubmitStatus submitPrompt(String userId, String dname, String token,
+                                           String prompt, long timestamp)
+    {
+        Optional<Dialogue> dOpt = dialogueDAO.getDialogueByUserAndName(userId, dname);
+        if (dOpt.isEmpty()) return PromptSubmitStatus.NOT_FOUND;
+
+        Dialogue d = dOpt.get();
+
+        if (!"READY".equals(d.getStatus())) return PromptSubmitStatus.NOT_READY;
+        if (!token.equals(d.getNextToken()))  return PromptSubmitStatus.WRONG_TOKEN;
+
+        // Persistir mensaje con respuesta vacía
+        String messageId = UUID.randomUUID().toString();
+        Message msg = new Message(messageId, d.getId(), prompt, null, timestamp);
+        messageDAO.createMessage(msg);
+
+        // Pasar a BUSY con nuevo next_token
+        String newNextToken = UUID.randomUUID().toString();
+        d.setStatus("BUSY");
+        d.setNextToken(newNextToken);
+        dialogueDAO.updateDialogue(d);
+
+        // Llamada gRPC en background — cuando llegue la respuesta se persiste y el
+        // diálogo vuelve a READY
+        CompletableFuture.runAsync(() -> {
+            try
+            {
+                var req = PromptRequest.newBuilder().setPrompt(prompt).build();
+                var resp = blockingStub.sendPrompt(req);
+                msg.setAnswer(resp.getResponse());
+                messageDAO.updateMessage(msg);
+            }
+            catch (Exception e)
+            {
+                logger.severe("Error en llamada gRPC: " + e.getMessage());
+                msg.setAnswer("[Error: no se pudo obtener respuesta]");
+                messageDAO.updateMessage(msg);
+            }
+            finally
+            {
+                d.setStatus("READY");
+                dialogueDAO.updateDialogue(d);
+            }
+        });
+
+        return PromptSubmitStatus.OK;
+    }
+
+    public boolean endDialogue(String userId, String dname)
+    {
+        return dialogueDAO.getDialogueByUserAndName(userId, dname)
+            .map(d -> {
+                d.setStatus("FINISHED");
+                return dialogueDAO.updateDialogue(d);
+            })
+            .orElse(false);
     }
 }

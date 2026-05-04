@@ -2,6 +2,7 @@ package es.um.sisdist.backend.Service;
 
 import es.um.sisdist.backend.Service.auth.Secured;
 import es.um.sisdist.backend.Service.impl.AppLogicImpl;
+import es.um.sisdist.backend.Service.impl.AppLogicImpl.PromptSubmitStatus;
 import es.um.sisdist.backend.dao.models.Dialogue;
 import es.um.sisdist.backend.dao.models.Message;
 import es.um.sisdist.models.DialogueDTO;
@@ -26,6 +27,14 @@ public class DialoguesEndpoint
     {
         public String name;
         public DialogueRequest() {}
+    }
+
+    @XmlRootElement
+    public static class PromptBody
+    {
+        public String prompt;
+        public long timestamp;
+        public PromptBody() {}
     }
 
     // GET /u/{id}/dialogue → lista de dialogues del usuario
@@ -122,6 +131,58 @@ public class DialoguesEndpoint
 
         boolean deleted = impl.deleteDialogue(id, dname);
         return deleted
+            ? Response.noContent().build()
+            : Response.status(Response.Status.NOT_FOUND).build();
+    }
+
+    // POST /u/{id}/dialogue/{dname}/next/{token} → enviar prompt
+    @POST
+    @Path("/{dname}/next/{token}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response sendPrompt(
+            @PathParam("id") String id,
+            @PathParam("dname") String dname,
+            @PathParam("token") String token,
+            @Context ContainerRequestContext ctx,
+            @Context UriInfo uriInfo,
+            PromptBody body)
+    {
+        if (!isOwner(id, ctx))
+            return Response.status(Response.Status.FORBIDDEN).build();
+
+        if (body == null || body.prompt == null || body.prompt.isBlank())
+            return Response.status(Response.Status.BAD_REQUEST).build();
+
+        long ts = body.timestamp > 0 ? body.timestamp : System.currentTimeMillis();
+        PromptSubmitStatus status = impl.submitPrompt(id, dname, token, body.prompt, ts);
+
+        return switch (status)
+        {
+            case NOT_FOUND   -> Response.status(Response.Status.NOT_FOUND).build();
+            case NOT_READY   -> Response.noContent()
+                                    .header("X-Reason", "dialogue is not READY").build();
+            case WRONG_TOKEN -> Response.status(Response.Status.CONFLICT).build();
+            case OK          -> {
+                URI location = uriInfo.getBaseUriBuilder()
+                    .path("u").path(id).path("dialogue").path(dname).build();
+                yield Response.created(location).build();
+            }
+        };
+    }
+
+    // POST /u/{id}/dialogue/{dname}/end → cerrar diálogo
+    @POST
+    @Path("/{dname}/end")
+    public Response endDialogue(
+            @PathParam("id") String id,
+            @PathParam("dname") String dname,
+            @Context ContainerRequestContext ctx)
+    {
+        if (!isOwner(id, ctx))
+            return Response.status(Response.Status.FORBIDDEN).build();
+
+        boolean ok = impl.endDialogue(id, dname);
+        return ok
             ? Response.noContent().build()
             : Response.status(Response.Status.NOT_FOUND).build();
     }
