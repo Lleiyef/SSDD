@@ -154,7 +154,8 @@ public class DialoguesEndpoint
             return Response.status(Response.Status.BAD_REQUEST).build();
 
         long ts = body.timestamp > 0 ? body.timestamp : System.currentTimeMillis();
-        PromptSubmitStatus status = impl.submitPrompt(id, dname, token, body.prompt, ts);
+        String jwt = (String) ctx.getProperty("jwtToken");
+        PromptSubmitStatus status = impl.submitPrompt(id, dname, token, body.prompt, ts, jwt);
 
         return switch (status)
         {

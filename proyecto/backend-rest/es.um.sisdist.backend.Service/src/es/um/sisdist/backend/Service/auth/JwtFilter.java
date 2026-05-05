@@ -34,5 +34,6 @@ public class JwtFilter implements ContainerRequestFilter
         }
         // Poner el sub (userId) disponible para los endpoints
         ctx.setProperty("userId", claims.get().getSubject());
+        ctx.setProperty("jwtToken", token);
     }
 }

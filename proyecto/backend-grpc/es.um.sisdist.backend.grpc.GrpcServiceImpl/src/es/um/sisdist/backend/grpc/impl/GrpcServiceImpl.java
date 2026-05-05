@@ -1,173 +1,220 @@
 package es.um.sisdist.backend.grpc.impl;
 
-import java.util.logging.Logger;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.Optional;
-
 import es.um.sisdist.backend.dao.DAOFactoryImpl;
 import es.um.sisdist.backend.dao.auth.JwtUtil;
 import es.um.sisdist.backend.dao.models.User;
 import es.um.sisdist.backend.dao.models.utils.UserUtils;
 import es.um.sisdist.backend.dao.user.IUserDAO;
-import es.um.sisdist.backend.grpc.PromptRequest;
-import es.um.sisdist.backend.grpc.PromptResponse;
-import es.um.sisdist.backend.grpc.GrpcServiceGrpc;
-import es.um.sisdist.backend.grpc.PingRequest;
-import es.um.sisdist.backend.grpc.PingResponse;
+import es.um.sisdist.backend.grpc.*;
 import io.grpc.stub.StreamObserver;
-import es.um.sisdist.backend.grpc.LoginRequest;
-import es.um.sisdist.backend.grpc.LoginResponse;
-import es.um.sisdist.backend.grpc.UserMessage;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.logging.Logger;
 
 class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
-	private Logger logger;
-	private final IUserDAO userDAO;
 
-	public GrpcServiceImpl(Logger logger) {
-		super();
-		this.logger = logger;
-		this.userDAO = new DAOFactoryImpl().createSQLUserDAO();
-	}
+    private static final long PROMPT_TIMEOUT_SECONDS = 300;
 
-	@Override
-	public void ping(PingRequest request, StreamObserver<PingResponse> responseObserver) {
-		logger.info("Recived PING request, value = " + request.getV());
-		responseObserver.onNext(PingResponse.newBuilder().setV(request.getV()).build());
-		responseObserver.onCompleted();
-	}
+    private static final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build();
 
-	@Override
-	public void login(LoginRequest request, StreamObserver<LoginResponse> responseObserver) {
-		logger.info("Intento de Login recibido para: " + request.getEmail());
+    private final Logger logger;
+    private final IUserDAO userDAO;
+    private final ConcurrentHashMap<String, CompletableFuture<String>> promptMap = new ConcurrentHashMap<>();
 
-		String email = request.getEmail();
-		String password = request.getPassword();
+    GrpcServiceImpl(Logger logger) {
+        super();
+        this.logger = logger;
+        this.userDAO = new DAOFactoryImpl().createSQLUserDAO();
+    }
 
-		Optional<User> userOpt = userDAO.getUserByEmail(email);
-		boolean success = userOpt.isPresent()
-			&& UserUtils.md5pass(password).equals(userOpt.get().getPassword_hash());
+    @Override
+    public void ping(PingRequest request, StreamObserver<PingResponse> responseObserver) {
+        logger.info("Recibido PING, value=" + request.getV());
+        responseObserver.onNext(PingResponse.newBuilder().setV(request.getV()).build());
+        responseObserver.onCompleted();
+    }
 
-		LoginResponse.Builder responseBuilder = LoginResponse.newBuilder().setSuccess(success);
+    @Override
+    public void login(LoginRequest request, StreamObserver<LoginResponse> responseObserver) {
+        logger.info("Intento de Login: " + request.getEmail());
+        Optional<User> userOpt = userDAO.getUserByEmail(request.getEmail());
+        boolean success = userOpt.isPresent()
+                && UserUtils.md5pass(request.getPassword()).equals(userOpt.get().getPassword_hash());
 
-		if (success) {
-			User u = userOpt.get();
-			String token = JwtUtil.generateToken(u.getId(), u.getEmail());
-			logger.info("Login EXITOSO para: " + email);
-			responseBuilder.setToken(token)
-				.setUser(UserMessage.newBuilder()
-					.setId(u.getId())
-					.setEmail(u.getEmail())
-					.setName(u.getName())
-					.setVisits(u.getVisits())
-					.build());
-		} else {
-			logger.warning("Login FALLIDO para: " + email);
-		}
+        LoginResponse.Builder builder = LoginResponse.newBuilder().setSuccess(success);
+        if (success) {
+            User u = userOpt.get();
+            builder.setToken(JwtUtil.generateToken(u.getId(), u.getEmail()))
+                   .setUser(UserMessage.newBuilder()
+                           .setId(u.getId()).setEmail(u.getEmail())
+                           .setName(u.getName()).setVisits(u.getVisits()).build());
+        }
+        responseObserver.onNext(builder.build());
+        responseObserver.onCompleted();
+    }
 
-		responseObserver.onNext(responseBuilder.build());
-		responseObserver.onCompleted();
-	}
+    @Override
+    public void sendPrompt(PromptRequest request, StreamObserver<PromptToken> responseObserver) {
+        String prompt = request.getPrompt();
+        logger.info("gRPC recibido sendPrompt: " + prompt);
 
-	@Override
-	public void sendPrompt(PromptRequest request, StreamObserver<PromptResponse> responseObserver) {
-		String promptTexto = request.getPrompt();
-		logger.info("gRPC: Recibido prompt del usuario: " + promptTexto);
+        if (prompt == null || prompt.isEmpty()) {
+            responseObserver.onError(new IllegalArgumentException("El prompt no puede estar vacío"));
+            return;
+        }
 
-		String llamaResponse = "";
-		try {
-			// 1. Configurar cliente HTTP para llamar al contenedor Dummy
-			// El contenedor se llama "ssdd-llamachat" y expone el puerto 5020
-			HttpClient client = HttpClient.newHttpClient();
+        try {
+            // Serializar el prompt manualmente para evitar dep. de Jackson en compile-time
+            String jsonBody = "{\"prompt\": " + jsonStringValue(prompt) + "}";
 
-			// Preparamos un JSON básico con la pregunta
-			String jsonBody = "{\"prompt\": \"" + promptTexto.replace("\"", "\\\"") + "\"}";
+            HttpRequest postReq = HttpRequest.newBuilder()
+                    .uri(URI.create("http://ssdd-llamachat:5020/prompt"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
 
-			// Hacemos la petición POST al contenedor de IA
-			HttpRequest httpRequest = HttpRequest.newBuilder()
-					.uri(URI.create("http://ssdd-llamachat:5020/prompt"))
-					.header("Content-Type", "application/json")
-					.POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-					.build();
+            HttpResponse<String> postResp = httpClient.send(postReq, HttpResponse.BodyHandlers.ofString());
 
-			logger.info("gRPC: Enviando petición al contenedor LlamaChat (Dummy)...");
+            if (postResp.statusCode() != 202) {
+                logger.warning("llamachat devolvió " + postResp.statusCode() + ", body: " + postResp.body());
+                responseObserver.onError(new RuntimeException("llamachat no aceptó el prompt: " + postResp.statusCode()));
+                return;
+            }
 
-			// 2. Enviar la petición y esperar la respuesta (el dummy tarda ~5 segs)
-			HttpResponse<String> httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            String location = postResp.headers().firstValue("Location")
+                    .orElseThrow(() -> new RuntimeException("llamachat no devolvió Location header"));
+            String llamachatToken = location.substring(location.lastIndexOf('/') + 1);
 
-			// La respuesta de LlamaChat se guarda aquí
-			llamaResponse = httpResponse.body();
-			logger.info("gRPC: Respuesta del LlamaChat recibida: " + llamaResponse);
+            String grpcToken = UUID.randomUUID().toString();
+            CompletableFuture<String> future = new CompletableFuture<String>()
+                    .orTimeout(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            promptMap.put(grpcToken, future);
 
-		} catch (Exception e) {
-			logger.severe("gRPC: Error conectando con LlamaChat Dummy: " + e.getMessage());
-			llamaResponse = "Error interno: No se pudo contactar con la IA.";
-		}
+            CompletableFuture.runAsync(() -> {
+                while (!future.isDone()) {
+                    try {
+                        Thread.sleep(500);
+                        // Nuevo cliente por petición para evitar problemas de reutilización
+                        // de conexión cuando llamachat devuelve 102 (cierra el socket).
+                        HttpClient pollClient = HttpClient.newBuilder()
+                                .followRedirects(HttpClient.Redirect.NEVER)
+                                .build();
+                        HttpRequest pollReq = HttpRequest.newBuilder()
+                                .uri(URI.create("http://ssdd-llamachat:5020/response/" + llamachatToken))
+                                .GET().build();
+                        HttpResponse<String> pollResp = pollClient.send(pollReq, HttpResponse.BodyHandlers.ofString());
 
-		// 3. Empaquetar la respuesta en el formato gRPC y devolverla
-		PromptResponse response = PromptResponse.newBuilder()
-				.setResponse(llamaResponse)
-				.build();
+                        if (pollResp.statusCode() == 200) {
+                            String answer = extractJsonField(pollResp.body(), "answer");
+                            future.complete(answer != null ? answer : pollResp.body());
+                            logger.info("gRPC: respuesta lista para grpcToken=" + grpcToken);
+                            return;
+                        }
+                        // Cualquier otro código (102 PROCESSING, etc.) → seguir esperando
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        future.completeExceptionally(e);
+                        return;
+                    } catch (Exception e) {
+                        // Errores transitorios de conexión (comunes con 102) → reintentar
+                        if (!future.isDone()) {
+                            logger.warning("gRPC: error temporal en polling (reintentando): " + e.getMessage());
+                        }
+                    }
+                }
+            });
 
-		responseObserver.onNext(response);
-		responseObserver.onCompleted();
-	}
+            responseObserver.onNext(PromptToken.newBuilder().setToken(grpcToken).build());
+            responseObserver.onCompleted();
 
-	/*
-	 * @Override
-	 * public void storeImage(ImageData request, StreamObserver<Empty>
-	 * responseObserver)
-	 * {
-	 * logger.info("Add image " + request.getId());
-	 * imageMap.put(request.getId(),request);
-	 * responseObserver.onNext(Empty.newBuilder().build());
-	 * responseObserver.onCompleted();
-	 * }
-	 * 
-	 * @Override
-	 * public StreamObserver<ImageData> storeImages(StreamObserver<Empty>
-	 * responseObserver)
-	 * {
-	 * // La respuesta, sólo un objeto Empty
-	 * responseObserver.onNext(Empty.newBuilder().build());
-	 * 
-	 * // Se retorna un objeto que, al ser llamado en onNext() con cada
-	 * // elemento enviado por el cliente, reacciona correctamente
-	 * return new StreamObserver<ImageData>() {
-	 * 
-	 * @Override
-	 * public void onCompleted() {
-	 * // Terminar la respuesta.
-	 * responseObserver.onCompleted();
-	 * }
-	 * 
-	 * @Override
-	 * public void onError(Throwable arg0) {
-	 * }
-	 * 
-	 * @Override
-	 * public void onNext(ImageData imagedata)
-	 * {
-	 * logger.info("Add image (multiple) " + imagedata.getId());
-	 * imageMap.put(imagedata.getId(), imagedata);
-	 * }
-	 * };
-	 * }
-	 * 
-	 * @Override
-	 * public void obtainImage(ImageSpec request, StreamObserver<ImageData>
-	 * responseObserver) {
-	 * // TODO Auto-generated method stub
-	 * super.obtainImage(request, responseObserver);
-	 * }
-	 * 
-	 * @Override
-	 * public StreamObserver<ImageSpec> obtainCollage(StreamObserver<ImageData>
-	 * responseObserver) {
-	 * // TODO Auto-generated method stub
-	 * return super.obtainCollage(responseObserver);
-	 * }
-	 */
+        } catch (Exception e) {
+            logger.severe("gRPC: error en sendPrompt: " + e.getMessage());
+            responseObserver.onError(e);
+        }
+    }
+
+    @Override
+    public void getPromptResponse(PromptToken request, StreamObserver<PromptResponse> responseObserver) {
+        String grpcToken = request.getToken();
+        CompletableFuture<String> future = promptMap.get(grpcToken);
+
+        if (future == null) {
+            responseObserver.onNext(PromptResponse.newBuilder().setStatus(PromptStatus.PROCESSING).build());
+            responseObserver.onCompleted();
+            return;
+        }
+
+        if (future.isDone()) {
+            try {
+                String answer = future.get();
+                promptMap.remove(grpcToken);
+                responseObserver.onNext(PromptResponse.newBuilder()
+                        .setResponse(answer).setStatus(PromptStatus.READY).build());
+            } catch (Exception e) {
+                promptMap.remove(grpcToken);
+                logger.severe("Error recuperando respuesta para grpcToken=" + grpcToken + ": " + e);
+                String cause = (e.getCause() instanceof TimeoutException) ? "Timeout esperando respuesta de llamachat"
+                        : e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+                responseObserver.onNext(PromptResponse.newBuilder()
+                        .setResponse("[Error: " + cause + "]")
+                        .setStatus(PromptStatus.READY).build());
+            }
+        } else {
+            responseObserver.onNext(PromptResponse.newBuilder().setStatus(PromptStatus.PROCESSING).build());
+        }
+        responseObserver.onCompleted();
+    }
+
+    /** Extrae el valor de un campo JSON string con soporte de escapes básicos. */
+    private static String extractJsonField(String json, String key) {
+        int keyIdx = json.indexOf("\"" + key + "\"");
+        if (keyIdx < 0) return null;
+        int colonIdx = json.indexOf(':', keyIdx + key.length() + 2);
+        int valStart = json.indexOf('"', colonIdx + 1) + 1;
+        StringBuilder sb = new StringBuilder();
+        int pos = valStart;
+        while (pos < json.length()) {
+            char c = json.charAt(pos);
+            if (c == '\\' && pos + 1 < json.length()) {
+                char next = json.charAt(pos + 1);
+                if (next == '"') sb.append('"');
+                else if (next == 'n') sb.append('\n');
+                else if (next == '\\') sb.append('\\');
+                else { sb.append('\\'); sb.append(next); }
+                pos += 2;
+            } else if (c == '"') {
+                break;
+            } else {
+                sb.append(c);
+                pos++;
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Serializa un String Java como valor JSON entre comillas con escapes correctos. */
+    private static String jsonStringValue(String value) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (char c : value.toCharArray()) {
+            if (c == '"') sb.append("\\\"");
+            else if (c == '\\') sb.append("\\\\");
+            else if (c == '\n') sb.append("\\n");
+            else if (c == '\r') sb.append("\\r");
+            else if (c == '\t') sb.append("\\t");
+            else sb.append(c);
+        }
+        return sb.append('"').toString();
+    }
 }

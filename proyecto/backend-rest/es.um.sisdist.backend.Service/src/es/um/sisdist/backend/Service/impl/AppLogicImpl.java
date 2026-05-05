@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import es.um.sisdist.backend.grpc.GrpcServiceGrpc;
 import es.um.sisdist.backend.grpc.PingRequest;
 import es.um.sisdist.backend.grpc.PromptRequest;
+import es.um.sisdist.backend.grpc.PromptToken;
 import es.um.sisdist.backend.dao.DAOFactoryImpl;
 import es.um.sisdist.backend.dao.IDAOFactory;
 import es.um.sisdist.backend.dao.dialogue.IDialogueDAO;
@@ -42,7 +43,7 @@ public class AppLogicImpl
 
     private final ManagedChannel channel;
     private final GrpcServiceGrpc.GrpcServiceBlockingStub blockingStub;
-    //private final GrpcServiceGrpc.GrpcServiceStub asyncStub;
+    private final JwtClientInterceptor jwtClientInterceptor;
 
     static AppLogicImpl instance = new AppLogicImpl();
 
@@ -64,11 +65,10 @@ public class AppLogicImpl
 
         channel = ManagedChannelBuilder
                 .forAddress(grpcServerName.orElse("localhost"), Integer.parseInt(grpcServerPort.orElse("50051")))
-                // Channels are secure by default (via SSL/TLS). For the example we disable TLS
-                // to avoid needing certificates.
                 .usePlaintext().build();
-        blockingStub = GrpcServiceGrpc.newBlockingStub(channel);
-        //asyncStub = GrpcServiceGrpc.newStub(channel);
+        jwtClientInterceptor = new JwtClientInterceptor();
+        io.grpc.Channel interceptedChannel = io.grpc.ClientInterceptors.intercept(channel, jwtClientInterceptor);
+        blockingStub = GrpcServiceGrpc.newBlockingStub(interceptedChannel);
     }
 
     public static AppLogicImpl getInstance()
@@ -187,7 +187,7 @@ public class AppLogicImpl
     }
 
     public PromptSubmitStatus submitPrompt(String userId, String dname, String token,
-                                           String prompt, long timestamp)
+                                           String prompt, long timestamp, String jwt)
     {
         Optional<Dialogue> dOpt = dialogueDAO.getDialogueByUserAndName(userId, dname);
         if (dOpt.isEmpty()) return PromptSubmitStatus.NOT_FOUND;
@@ -210,17 +210,26 @@ public class AppLogicImpl
 
         // Llamada gRPC en background — cuando llegue la respuesta se persiste y el
         // diálogo vuelve a READY
+        final String capturedJwt = jwt;
         CompletableFuture.runAsync(() -> {
             try
             {
+                jwtClientInterceptor.setToken(capturedJwt);
                 var req = PromptRequest.newBuilder().setPrompt(prompt).build();
-                var resp = blockingStub.sendPrompt(req);
+                es.um.sisdist.backend.grpc.PromptToken grpcToken = blockingStub.sendPrompt(req);
+
+                es.um.sisdist.backend.grpc.PromptResponse resp;
+                do {
+                    Thread.sleep(500);
+                    resp = blockingStub.getPromptResponse(grpcToken);
+                } while (resp.getStatus() == es.um.sisdist.backend.grpc.PromptStatus.PROCESSING);
+
                 msg.setAnswer(resp.getResponse());
                 messageDAO.updateMessage(msg);
             }
             catch (Exception e)
             {
-                logger.severe("Error en llamada gRPC: " + e.getMessage());
+                logger.severe("Error en llamada gRPC asíncrona: " + e.getMessage());
                 msg.setAnswer("[Error: no se pudo obtener respuesta]");
                 messageDAO.updateMessage(msg);
             }

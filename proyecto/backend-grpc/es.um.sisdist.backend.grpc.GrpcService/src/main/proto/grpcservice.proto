@@ -5,60 +5,50 @@ option java_package = "es.um.sisdist.backend.grpc";
 
 package es.um.sisdist.backend.grpc;
 
-// Definición del servicio
 service GrpcService
 {
-    // Mantenemos el Ping para pruebas de conexión
     rpc Ping(PingRequest) returns (PingResponse);
-
-    // Función para validar login desde el Backend-REST
     rpc Login(LoginRequest) returns (LoginResponse);
-
-    // --- NUEVA FUNCIÓN PARA EL CHAT ---
-    // Función para enviar un mensaje a la IA y recibir su respuesta
-    rpc SendPrompt(PromptRequest) returns (PromptResponse);
+    rpc SendPrompt(PromptRequest) returns (PromptToken);
+    rpc GetPromptResponse(PromptToken) returns (PromptResponse);
 }
 
-// --- MENSAJES ---
+message PingRequest  { int32 v = 1; }
+message PingResponse { int32 v = 1; }
 
-message PingRequest {
-    int32 v = 1;
-}
-
-message PingResponse {
-    int32 v = 1;
-}
-
-// Petición de Login (Email y Pass)
 message LoginRequest {
     string email = 1;
     string password = 2;
 }
 
-// Respuesta del Login
 message LoginResponse {
-    bool success = 1;      // ¿Login correcto?
-    string token = 2;      // Token JWT (si lo generamos aquí)
-    UserMessage user = 3;  // Datos del usuario si el login fue bien
+    bool success = 1;
+    string token = 2;
+    UserMessage user = 3;
 }
 
-// Objeto Usuario (Equivalente a tu UserDTO y la tabla de MySQL)
 message UserMessage {
     string id = 1;
     string email = 2;
     string name = 3;
-    int32 visits = 4; // Estadísticas (según especificación)
+    int32 visits = 4;
 }
 
-// --- NUEVOS MENSAJES PARA EL CHAT ---
-
-// Petición que envía el usuario con su mensaje
 message PromptRequest {
-    string prompt = 1;     // El texto que escribe el usuario
-    // string userid = 2;  // (Opcional) Lo dejaremos preparado para cuando haya JWT
+    string prompt = 1;
 }
 
-// Respuesta que devuelve el sistema (la IA)
+message PromptToken {
+    string token = 1;
+}
+
+enum PromptStatus {
+    STATUS_UNSPECIFIED = 0;
+    PROCESSING = 1;
+    READY = 2;
+}
+
 message PromptResponse {
-    string response = 1;   // El texto que contesta LlamaChat
+    string response = 1;
+    PromptStatus status = 2;
 }

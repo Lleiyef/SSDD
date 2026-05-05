@@ -33,6 +33,7 @@ package es.um.sisdist.backend.grpc.impl;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import io.grpc.ServerInterceptors;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -55,7 +56,7 @@ public class GrpcServiceServer
 			Optional.ofNullable(System.getenv("GRPC_SERVER_PORT"));
     server = ServerBuilder.forPort(
     			grpcServerPort.isPresent() ? Integer.parseInt(grpcServerPort.get()) : port)
-        .addService(new GrpcServiceImpl(logger))
+        .addService(ServerInterceptors.intercept(new GrpcServiceImpl(logger), new JwtServerInterceptor()))
         .build()
         .start();
     logger.info("Server started, listening on " + port);
