@@ -39,6 +39,15 @@ services:
       db-mysql:
         condition: service_healthy
 
+  backend-rest-externo:
+    build: backend-rest-externo/es.um.sisdist.backend.ServiceExterno/.
+    ports:
+      - 8180:8080
+    env_file: sql.env
+    depends_on:
+      db-mysql:
+        condition: service_healthy
+
   backend-grpc:
     image: dsevilla/ssdd-backend-grpc:1.0
     ports:
