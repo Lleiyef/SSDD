@@ -65,15 +65,14 @@ class LlamaChatE2E(unittest.TestCase):
         prompt_input.send_keys("Di hola en una palabra")
         self.driver.find_element(By.ID, "send-btn").click()
 
-        # Esperar a que aparezca una burbuja de respuesta de LlamaChat
-        response_locator = (By.XPATH, "//*[contains(@class,'bot') and contains(text(),'LlamaChat')]")
+        # Esperar a que aparezca la respuesta real (sin clase 'loading')
+        response_locator = (By.XPATH,
+            "//*[contains(@class,'bot') and not(contains(@class,'loading')) and contains(.,'LlamaChat')]")
         self.wait.until(EC.presence_of_element_located(response_locator))
 
         response_elements = self.driver.find_elements(*response_locator)
-        # Filtrar el mensaje de "pensando..."
-        real_responses = [e for e in response_elements if "pensando" not in e.text]
-        self.assertTrue(len(real_responses) > 0, "No se recibió respuesta de LlamaChat")
-        self.assertGreater(len(real_responses[-1].text), 10, "La respuesta está vacía o es muy corta")
+        self.assertTrue(len(response_elements) > 0, "No se recibió respuesta de LlamaChat")
+        self.assertGreater(len(response_elements[-1].text), 10, "La respuesta está vacía o es muy corta")
 
     def test_04_navigate_to_logs(self):
         """Navega a /logs y verifica que se muestra al menos una conversación."""

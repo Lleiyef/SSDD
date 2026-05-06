@@ -1,7 +1,7 @@
 services:
 
   ssdd-frontend:
-    image: dsevilla/ssdd-frontend:1.0
+    build: frontend
     ports:
       - 5010:5010
     env_file: sql.env
@@ -9,6 +9,7 @@ services:
       - FLASK_APP=app/app.py
       - FLASK_DEBUG=true
       - PORT=5010
+      - DEBUG_METRICS=1
     depends_on:
       db-mysql:
         condition: service_healthy
@@ -31,7 +32,7 @@ services:
       start_period: 20s
 
   backend-rest:
-    image: dsevilla/ssdd-backend-rest:1.0
+    build: backend-rest/es.um.sisdist.backend.Service/.
     ports:
       - 8080:8080
     env_file: sql.env
@@ -49,7 +50,7 @@ services:
         condition: service_healthy
 
   backend-grpc:
-    image: dsevilla/ssdd-backend-grpc:1.0
+    build: backend-grpc/es.um.sisdist.backend.grpc.GrpcServiceImpl/.
     ports:
       - 50051
       - 9091
