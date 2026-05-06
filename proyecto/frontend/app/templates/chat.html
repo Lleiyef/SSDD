@@ -1,81 +1,118 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>LlamaChat</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9;}
-        .chat-container { width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0px 0px 10px rgba(0,0,0,0.1); }
-        #chat-box { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; margin-bottom: 15px; background: #fafafa; }
-        .msg { margin: 8px 0; padding: 8px; border-radius: 5px; }
-        .user { background-color: #d1e7dd; color: #0f5132; text-align: right; margin-left: 20%; }
-        .bot { background-color: #e2e3e5; color: #41464c; margin-right: 20%; }
-        .loading { font-style: italic; color: #6c757d; }
-        input { width: 75%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        button { width: 20%; padding: 10px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0b5ed7; }
-    </style>
-</head>
-<body>
-
+{% extends "base.html" %}
+{% block custom_style %}
+<style>
+    .chat-container { max-width: 700px; margin: 40px auto; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.1); }
+    #chat-box { border: 1px solid #ccc; padding: 10px; height: 350px; overflow-y: scroll; margin-bottom: 15px; background: #fafafa; border-radius: 4px; }
+    .msg { margin: 8px 0; padding: 10px; border-radius: 6px; }
+    .user { background-color: #d1e7dd; color: #0f5132; text-align: right; margin-left: 20%; }
+    .bot  { background-color: #e2e3e5; color: #41464c; margin-right: 20%; }
+    .loading { font-style: italic; color: #6c757d; }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+    .input-row button { padding: 10px 20px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .input-row button:disabled { background-color: #6c757d; cursor: not-allowed; }
+</style>
+{% endblock %}
+{% block content %}
 <div class="chat-container">
-    <h2>LlamaChat (Simulación)</h2>
+    <h2>🦙 LlamaChat</h2>
     <div id="chat-box"></div>
-    
-    <div>
-        <input type="text" id="prompt" placeholder="Escribe tu mensaje..." onkeypress="if(event.key === 'Enter') sendMessage()">
+    <div class="input-row">
+        <input type="text" id="prompt" placeholder="Escribe tu mensaje..." onkeypress="if(event.key==='Enter') sendMessage()">
         <button onclick="sendMessage()" id="send-btn">Enviar</button>
     </div>
 </div>
 
 <script>
+    let polling = false;
+
     async function sendMessage() {
-        const promptInput = document.getElementById("prompt");
-        const chatBox = document.getElementById("chat-box");
-        const btn = document.getElementById("send-btn");
+        const promptInput = document.getElementById('prompt');
+        const chatBox = document.getElementById('chat-box');
+        const btn = document.getElementById('send-btn');
         const text = promptInput.value.trim();
+        if (!text || polling) return;
 
-        if (!text) return;
+        appendMsg('user', '<b>Tú:</b> ' + escapeHtml(text));
+        promptInput.value = '';
 
-        // 1. Mostrar el mensaje del usuario
-        chatBox.innerHTML += `<div class="msg user"><b>Tú:</b> ${text}</div>`;
-        promptInput.value = "";
-        
-        // Mostrar mensaje de "cargando..."
-        const loadingId = "loading-" + Date.now();
-        chatBox.innerHTML += `<div class="msg bot loading" id="${loadingId}">LlamaChat está pensando... (aprox 5 segs)</div>`;
+        const loadingId = 'loading-' + Date.now();
+        appendMsg('bot loading', 'LlamaChat está pensando...', loadingId);
         chatBox.scrollTop = chatBox.scrollHeight;
-        
-        // Bloquear input mientras espera
+
         promptInput.disabled = true;
         btn.disabled = true;
+        polling = true;
 
         try {
-            // 2. Enviar petición a Flask (/api/send_chat)
-            const response = await fetch('/api/send_chat', {
+            const r = await fetch('/api/send_chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: text })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({prompt: text})
             });
-            
-            const data = await response.json();
-            
-            // 3. Quitar mensaje de carga y mostrar respuesta real
-            document.getElementById(loadingId).remove();
-            chatBox.innerHTML += `<div class="msg bot"><b>LlamaChat:</b> ${data.response}</div>`;
-            
-        } catch (error) {
-            document.getElementById(loadingId).remove();
-            chatBox.innerHTML += `<div class="msg bot" style="color:red;"><b>Error:</b> No se pudo conectar con el servidor.</div>`;
+            if (!r.ok) {
+                const err = await r.json();
+                replaceLoading(loadingId, 'error', '<b>Error:</b> ' + (err.error || r.status));
+                return;
+            }
+            // Prompt aceptado — ahora hacemos polling hasta que status=READY
+            await pollUntilReady(loadingId);
+        } catch(e) {
+            replaceLoading(loadingId, 'error', '<b>Error:</b> No se pudo conectar con el servidor.');
         } finally {
-            // Desbloquear input
             promptInput.disabled = false;
             btn.disabled = false;
+            polling = false;
             promptInput.focus();
             chatBox.scrollTop = chatBox.scrollHeight;
         }
     }
-</script>
 
-</body>
-</html>
+    async function pollUntilReady(loadingId) {
+        for (let i = 0; i < 120; i++) {   // máx ~4 min
+            await sleep(2000);
+            try {
+                const r = await fetch('/api/poll_chat');
+                const data = await r.json();
+                if (data.status === 'READY') {
+                    replaceLoading(loadingId, 'bot', '<b>LlamaChat:</b> ' + escapeHtml(data.answer));
+                    return;
+                }
+                if (data.status === 'error') {
+                    replaceLoading(loadingId, 'bot', '<b>Error:</b> Fallo al obtener respuesta.');
+                    return;
+                }
+                // BUSY o FINISHED: seguir esperando
+            } catch(e) {
+                replaceLoading(loadingId, 'bot', '<b>Error:</b> Conexión perdida durante el polling.');
+                return;
+            }
+        }
+        replaceLoading(loadingId, 'bot', '<b>LlamaChat:</b> Tiempo de espera agotado.');
+    }
+
+    function appendMsg(cls, html, id) {
+        const chatBox = document.getElementById('chat-box');
+        const div = document.createElement('div');
+        div.className = 'msg ' + cls;
+        div.innerHTML = html;
+        if (id) div.id = id;
+        chatBox.appendChild(div);
+    }
+
+    function replaceLoading(id, cls, html) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.className = 'msg ' + cls;
+            el.innerHTML = html;
+        }
+        document.getElementById('chat-box').scrollTop = 99999;
+    }
+
+    function escapeHtml(text) {
+        return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+{% endblock %}

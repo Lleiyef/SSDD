@@ -1,23 +1,38 @@
-from flask import Flask, render_template, send_from_directory, url_for, request, redirect
-from flask_login import LoginManager, login_manager, current_user, login_user, login_required, logout_user
-from flask import render_template, request, jsonify
-import requests
 import os
+import time
+import base64
+import json
 
-# Usuarios
-from models import users, User
+from flask import Flask, render_template, send_from_directory, url_for, request, redirect, session, jsonify
+from flask_login import LoginManager, current_user, login_user, login_required, logout_user
+import requests
 
-# Login
+from models import User
 from forms import LoginForm, SignupForm
 
 app = Flask(__name__, static_url_path='')
-login_manager = LoginManager()
-login_manager.init_app(app) # Para mantener la sesión
-
-# Configurar el secret_key. OJO, no debe ir en un servidor git público.
-# Python ofrece varias formas de almacenar esto de forma segura, que
-# no cubriremos aquí.
 app.config['SECRET_KEY'] = 'qH1vprMjavek52cv7Lmfe1FoCexrrV8egFnB21jHhkuOHm8hJUe1hwn7pKEZQ1fioUzDb3sWcNK1pJVVIhyrgvFiIrceXpKJBFIn_i9-LTLBCc4cqaI3gjJJHU6kxuT8bnC7Ng'
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+REST_SERVER = os.environ.get('REST_SERVER', 'backend-rest')
+
+def backend_url(path):
+    return f"http://{REST_SERVER}:8080/Service/jaxrs{path}"
+
+def auth_headers():
+    return {"Authorization": f"Bearer {session.get('jwt', '')}"}
+
+def decode_jwt_payload(token):
+    try:
+        payload = token.split('.')[1]
+        payload += '=' * (4 - len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        return {}
+
 
 @app.route('/static/<path:path>')
 def serve_static(path):
@@ -27,122 +42,214 @@ def serve_static(path):
 def index():
     return render_template('index.html')
 
+@login_manager.user_loader
+def load_user(user_id):
+    jwt = session.get('jwt')
+    if not jwt:
+        return None
+    return User(
+        user_id=session.get('user_id', user_id),
+        email=session.get('user_email', ''),
+        name=session.get('user_name', ''),
+        jwt_token=jwt
+    )
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # Si ya está dentro, al index
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-    
+
     error = None
     form = LoginForm(None if request.method != 'POST' else request.form)
-    
-    if request.method == "POST" and form.validate():
-        # 1. Buscamos el usuario en nuestra "base de datos" (la lista users)
-        # Usamos el método estático que arreglamos en models.py
-        user = User.get_user(form.email.data)
-        
-        # 2. Si el usuario existe, comprobamos la contraseña
-        # Nota: encode('utf-8') es necesario porque tu modelo usa hash sobre bytes
-        if user is not None and user.check_password(form.password.data.encode('utf-8')):
-            login_user(user, remember=form.remember_me.data)
-            return redirect(url_for('index'))
-        else:
-            error = 'Credenciales inválidas. Inténtalo de nuevo.'
 
-    return render_template('login.html', form=form,  error=error)
+    if request.method == 'POST' and form.validate():
+        try:
+            r = requests.post(
+                backend_url('/login'),
+                json={'email': form.email.data, 'password': form.password.data},
+                timeout=5
+            )
+            if r.status_code == 200:
+                token = r.json().get('token', '')
+                claims = decode_jwt_payload(token)
+                user_id = claims.get('sub', '')
+                email = claims.get('email', form.email.data)
+
+                ur = requests.get(
+                    backend_url(f'/u/{user_id}'),
+                    headers={'Authorization': f'Bearer {token}'},
+                    timeout=5
+                )
+                name = ur.json().get('name', email) if ur.status_code == 200 else email
+
+                session['jwt'] = token
+                session['user_id'] = user_id
+                session['user_email'] = email
+                session['user_name'] = name
+
+                user = User(user_id=user_id, email=email, name=name, jwt_token=token)
+                login_user(user, remember=form.remember_me.data)
+                return redirect(url_for('index'))
+            else:
+                error = 'Credenciales inválidas. Inténtalo de nuevo.'
+        except requests.exceptions.ConnectionError:
+            error = 'No se puede conectar con el servidor.'
+
+    return render_template('login.html', form=form, error=error)
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    form = SignupForm()
+    error = None
+
+    if request.method == 'POST' and form.validate():
+        try:
+            r = requests.post(
+                backend_url('/signup'),
+                json={
+                    'email': form.email.data,
+                    'name': form.name.data,
+                    'password': form.password.data
+                },
+                timeout=5
+            )
+            if r.status_code == 201:
+                lr = requests.post(
+                    backend_url('/login'),
+                    json={'email': form.email.data, 'password': form.password.data},
+                    timeout=5
+                )
+                if lr.status_code == 200:
+                    token = lr.json().get('token', '')
+                    claims = decode_jwt_payload(token)
+                    user_id = claims.get('sub', '')
+                    email = claims.get('email', form.email.data)
+                    name = form.name.data
+
+                    session['jwt'] = token
+                    session['user_id'] = user_id
+                    session['user_email'] = email
+                    session['user_name'] = name
+
+                    user = User(user_id=user_id, email=email, name=name, jwt_token=token)
+                    login_user(user)
+                return redirect(url_for('index'))
+            elif r.status_code == 409:
+                error = 'El email ya está registrado.'
+            else:
+                error = f'Error al registrar ({r.status_code}).'
+        except requests.exceptions.ConnectionError:
+            error = 'No se puede conectar con el servidor.'
+
+    return render_template('signup.html', form=form, error=error)
+
+@app.route('/logout')
+@login_required
+def logout():
+    session.pop('jwt', None)
+    session.pop('user_id', None)
+    session.pop('user_email', None)
+    session.pop('user_name', None)
+    session.pop('dialogue_name', None)
+    logout_user()
+    return redirect(url_for('index'))
 
 @app.route('/profile')
 @login_required
 def profile():
     return render_template('profile.html')
 
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for('index'))
-
-@login_manager.user_loader
-def load_user(user_id):
-    for user in users:
-        if user.id == int(user_id):
-            return user
-    return None
-
-
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    # Si ya está logueado, lo mandamos al inicio
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-
-    form = SignupForm()
-    error = None
-    
-    if request.method == "POST" and form.validate():
-        # 1. Comprobar si el email ya existe en nuestra lista "falsa" de usuarios
-        # (Esto se sustituirá luego por una llamada a la base de datos)
-        existing_user = next((u for u in users if u.email == form.email.data), None)
-        
-        if existing_user:
-            error = 'El email ya está registrado.'
-        else:
-            # 2. Crear el nuevo usuario
-            # Generamos un ID simple basado en la longitud de la lista + 1
-            new_id = len(users) + 1
-            
-            # Creamos el objeto usuario. 
-            # IMPORTANTE: Encodeamos a utf-8 porque tu clase User espera bytes para el hash
-            new_user = User(
-                id=new_id,
-                name=form.name.data,
-                email=form.email.data,
-                password=form.password.data.encode('utf-8')
-            )
-            
-            # 3. Guardar en la "base de datos" (lista en memoria)
-            users.append(new_user)
-            
-            # 4. Loguear al usuario directamente y redirigir
-            login_user(new_user)
-            return redirect(url_for('index'))
-
-    return render_template('signup.html', form=form, error=error)
-
-# 1. Ruta para mostrar la página web del chat
 @app.route('/chat')
 @login_required
 def chat_view():
+    user_id = session.get('user_id')
+    if 'dialogue_name' not in session:
+        dname = f"chat-{int(time.time())}"
+        try:
+            requests.post(
+                backend_url(f'/u/{user_id}/dialogue'),
+                json={'name': dname},
+                headers=auth_headers(),
+                timeout=5
+            )
+        except Exception:
+            pass
+        session['dialogue_name'] = dname
     return render_template('chat.html')
 
-# 2. Ruta que recibe el mensaje de JS y llama a tu Backend REST
 @app.route('/api/send_chat', methods=['POST'])
+@login_required
 def api_send_chat():
     data = request.get_json()
-    prompt = data.get('prompt', '')
-
+    prompt = (data.get('prompt') or '').strip()
     if not prompt:
-        return jsonify({"response": "El mensaje no puede estar vacío."}), 400
+        return jsonify({'error': 'Mensaje vacío'}), 400
+
+    user_id = session.get('user_id')
+    dname = session.get('dialogue_name')
 
     try:
-        url_rest = "http://backend-rest:8080/Service/jaxrs/chat"
-        payload = {"prompt": prompt}
-        
-        rest_response = requests.post(url_rest, json=payload, timeout=30)
-        
-        if rest_response.status_code == 200:
-            return jsonify(rest_response.json())
-        elif rest_response.status_code == 503:
-            return jsonify({"response": "El servicio de IA no está disponible en este momento."}), 503
+        dr = requests.get(
+            backend_url(f'/u/{user_id}/dialogue/{dname}'),
+            headers=auth_headers(), timeout=5
+        )
+        if dr.status_code != 200:
+            return jsonify({'error': 'No se pudo acceder al diálogo'}), 500
+
+        dialogue = dr.json()
+        next_token = dialogue.get('nextToken')
+        if dialogue.get('status') != 'READY':
+            return jsonify({'error': 'El diálogo está ocupado'}), 409
+
+        pr = requests.post(
+            backend_url(f'/u/{user_id}/dialogue/{dname}/next/{next_token}'),
+            json={'prompt': prompt, 'timestamp': int(time.time() * 1000)},
+            headers=auth_headers(), timeout=5
+        )
+
+        if pr.status_code == 201:
+            return jsonify({'ok': True})
+        elif pr.status_code == 204:
+            return jsonify({'error': 'Diálogo ocupado'}), 409
         else:
-            return jsonify({"response": f"Error del servidor ({rest_response.status_code}). Inténtalo de nuevo."}), 500
-            
+            return jsonify({'error': f'Error {pr.status_code}'}), 500
+
     except requests.exceptions.Timeout:
-        return jsonify({"response": "La IA está tardando demasiado. Inténtalo de nuevo."}), 504
+        return jsonify({'error': 'Timeout conectando con el backend'}), 504
     except requests.exceptions.ConnectionError:
-        return jsonify({"response": "No se puede conectar con el servidor. Comprueba que el backend está activo."}), 503
-    except Exception as e:
-        return jsonify({"response": f"Error inesperado: {str(e)}"}), 500
+        return jsonify({'error': 'No se puede conectar con el backend'}), 503
+
+@app.route('/api/poll_chat')
+@login_required
+def api_poll_chat():
+    user_id = session.get('user_id')
+    dname = session.get('dialogue_name')
+
+    try:
+        r = requests.get(
+            backend_url(f'/u/{user_id}/dialogue/{dname}'),
+            headers=auth_headers(), timeout=5
+        )
+        if r.status_code != 200:
+            return jsonify({'status': 'error'}), 500
+
+        dialogue = r.json()
+        status = dialogue.get('status')
+        messages = dialogue.get('messages') or []
+
+        if status == 'READY' and messages:
+            last = messages[-1]
+            answer = last.get('answer') or ''
+            if answer:
+                return jsonify({'status': 'READY', 'answer': answer})
+
+        return jsonify({'status': status or 'BUSY'})
+
+    except Exception:
+        return jsonify({'status': 'error'}), 503
 
 
 if __name__ == '__main__':
