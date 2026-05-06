@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mt-5">
+  <h2>Estadísticas del sistema</h2>
+  <p class="text-muted">Datos en tiempo real obtenidos de Prometheus.</p>
+
+  <div class="row g-4 mt-2">
+    <div class="col-md-4">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <div style="font-size:48px;">💬</div>
+          <h5 class="card-title mt-2">Conversaciones iniciadas</h5>
+          <p class="display-6 fw-bold">
+            {% if metrics.conversations_total == 'N/D' %}
+              <span class="text-muted fs-4">N/D</span>
+            {% else %}
+              {{ metrics.conversations_total | float | round(0) | int }}
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <div style="font-size:48px;">⏱️</div>
+          <h5 class="card-title mt-2">Latencia media (REST)</h5>
+          <p class="display-6 fw-bold">
+            {% if metrics.avg_latency == 'N/D' or metrics.avg_latency == 'nan' %}
+              <span class="text-muted fs-4">N/D</span>
+            {% else %}
+              {{ (metrics.avg_latency | float * 1000) | round(1) }} ms
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <div style="font-size:48px;">🟢</div>
+          <h5 class="card-title mt-2">Diálogos activos</h5>
+          <p class="display-6 fw-bold">
+            {% if metrics.active_dialogues == 'N/D' %}
+              <span class="text-muted fs-4">N/D</span>
+            {% else %}
+              {{ metrics.active_dialogues | float | round(0) | int }}
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert-warning mt-4">
+    Los datos aparecen como <strong>N/D</strong> hasta que Prometheus esté activo y los servicios exporten métricas (Fase 9).
+  </div>
+</div>
+{% endblock %}

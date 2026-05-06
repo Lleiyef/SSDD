@@ -252,5 +252,77 @@ def api_poll_chat():
         return jsonify({'status': 'error'}), 503
 
 
+@app.route('/logs')
+@login_required
+def logs_view():
+    user_id = session.get('user_id')
+    try:
+        r = requests.get(
+            backend_url(f'/u/{user_id}/dialogue'),
+            headers=auth_headers(), timeout=5
+        )
+        dialogues = r.json() if r.status_code == 200 else []
+    except Exception:
+        dialogues = []
+    return render_template('logs.html', dialogues=dialogues)
+
+@app.route('/logs/<dname>')
+@login_required
+def logs_detail(dname):
+    user_id = session.get('user_id')
+    try:
+        r = requests.get(
+            backend_url(f'/u/{user_id}/dialogue/{dname}'),
+            headers=auth_headers(), timeout=5
+        )
+        dialogue = r.json() if r.status_code == 200 else None
+    except Exception:
+        dialogue = None
+    if dialogue is None:
+        return redirect(url_for('logs_view'))
+    return render_template('logs_detail.html', dialogue=dialogue)
+
+@app.route('/logs/<dname>/delete', methods=['POST'])
+@login_required
+def logs_delete(dname):
+    user_id = session.get('user_id')
+    try:
+        requests.delete(
+            backend_url(f'/u/{user_id}/dialogue/{dname}'),
+            headers=auth_headers(), timeout=5
+        )
+    except Exception:
+        pass
+    if session.get('dialogue_name') == dname:
+        session.pop('dialogue_name', None)
+    return redirect(url_for('logs_view'))
+
+@app.route('/stats')
+@login_required
+def stats_view():
+    prometheus = os.environ.get('PROMETHEUS_URL', 'http://prometheus:9090')
+
+    def prom_query(q):
+        try:
+            r = requests.get(f'{prometheus}/api/v1/query', params={'query': q}, timeout=3)
+            if r.status_code == 200:
+                result = r.json().get('data', {}).get('result', [])
+                if result:
+                    return result[0].get('value', [None, 'N/D'])[1]
+        except Exception:
+            pass
+        return 'N/D'
+
+    metrics = {
+        'conversations_total': prom_query('conversations_started_total'),
+        'avg_latency':         prom_query(
+            'rate(http_server_requests_seconds_sum{uri=~"/jaxrs/.*"}[5m])'
+            ' / rate(http_server_requests_seconds_count{uri=~"/jaxrs/.*"}[5m])'
+        ),
+        'active_dialogues':    prom_query('sum(ssdd_active_dialogues)'),
+    }
+    return render_template('stats.html', metrics=metrics)
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5010)))

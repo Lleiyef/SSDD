@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mt-5">
+  <a href="{{ url_for('logs_view') }}" class="btn btn-outline-secondary btn-sm mb-3">&larr; Volver a Logs</a>
+  <h2>Conversación: {{ dialogue.name }}</h2>
+  <p>
+    Estado:
+    {% if dialogue.status == 'READY' %}
+      <span class="badge bg-success">READY</span>
+    {% elif dialogue.status == 'BUSY' %}
+      <span class="badge bg-warning text-dark">BUSY</span>
+    {% else %}
+      <span class="badge bg-secondary">{{ dialogue.status }}</span>
+    {% endif %}
+  </p>
+
+  {% if dialogue.messages %}
+  <div class="card">
+    <div class="card-body" style="max-height:500px; overflow-y:auto;">
+      {% for m in dialogue.messages %}
+      <div class="mb-3">
+        <div class="p-2 rounded" style="background:#d1e7dd; margin-left:20%;">
+          <strong>Tú:</strong> {{ m.prompt }}
+        </div>
+        {% if m.answer %}
+        <div class="p-2 rounded mt-1" style="background:#e2e3e5; margin-right:20%;">
+          <strong>LlamaChat:</strong> {{ m.answer }}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info mt-3">Esta conversación no tiene mensajes aún.</div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('logs_delete', dname=dialogue.name) }}" class="mt-3"
+        onsubmit="return confirm('¿Eliminar esta conversación?')">
+    <button type="submit" class="btn btn-danger">Eliminar conversación</button>
+  </form>
+</div>
+{% endblock %}

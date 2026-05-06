@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mt-5">
+  <h2>Mis conversaciones</h2>
+  <a href="{{ url_for('chat_view') }}" class="btn btn-primary mb-3">+ Nueva conversación</a>
+
+  {% if dialogues %}
+  <table class="table table-hover">
+    <thead class="table-dark">
+      <tr>
+        <th>Nombre</th>
+        <th>Estado</th>
+        <th>Creada</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in dialogues %}
+      <tr>
+        <td><a href="{{ url_for('logs_detail', dname=d.name) }}">{{ d.name }}</a></td>
+        <td>
+          {% if d.status == 'READY' %}
+            <span class="badge bg-success">READY</span>
+          {% elif d.status == 'BUSY' %}
+            <span class="badge bg-warning text-dark">BUSY</span>
+          {% else %}
+            <span class="badge bg-secondary">{{ d.status }}</span>
+          {% endif %}
+        </td>
+        <td>{{ (d.createdAt / 1000) | int | string }}</td>
+        <td>
+          <a href="{{ url_for('logs_detail', dname=d.name) }}" class="btn btn-sm btn-outline-primary">Ver</a>
+          <form method="POST" action="{{ url_for('logs_delete', dname=d.name) }}" class="d-inline"
+                onsubmit="return confirm('¿Eliminar conversación {{ d.name }}?')">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="alert alert-info">No tienes conversaciones todavía. <a href="{{ url_for('chat_view') }}">¡Empieza una!</a></div>
+  {% endif %}
+</div>
+{% endblock %}
