@@ -7,11 +7,20 @@ from flask import Flask, render_template, send_from_directory, url_for, request,
 from flask_login import LoginManager, current_user, login_user, login_required, logout_user
 import requests
 
+from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import Counter
+
 from models import User
 from forms import LoginForm, SignupForm
 
 app = Flask(__name__, static_url_path='')
 app.config['SECRET_KEY'] = 'qH1vprMjavek52cv7Lmfe1FoCexrrV8egFnB21jHhkuOHm8hJUe1hwn7pKEZQ1fioUzDb3sWcNK1pJVVIhyrgvFiIrceXpKJBFIn_i9-LTLBCc4cqaI3gjJJHU6kxuT8bnC7Ng'
+
+PrometheusMetrics(app)
+conversations_started = Counter(
+    'conversations_started_total',
+    'Total de conversaciones iniciadas'
+)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -178,6 +187,7 @@ def chat_view():
         except Exception:
             pass
         session['dialogue_name'] = dname
+        conversations_started.inc()
     return render_template('chat.html')
 
 @app.route('/api/send_chat', methods=['POST'])

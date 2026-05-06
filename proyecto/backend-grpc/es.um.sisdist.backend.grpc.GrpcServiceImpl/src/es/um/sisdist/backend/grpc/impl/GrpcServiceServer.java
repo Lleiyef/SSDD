@@ -34,6 +34,8 @@ package es.um.sisdist.backend.grpc.impl;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.ServerInterceptors;
+import io.prometheus.client.exporter.HTTPServer;
+import io.prometheus.client.hotspot.DefaultExports;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -52,7 +54,7 @@ public class GrpcServiceServer
 
   private void start() throws IOException
   {
-	Optional<String> grpcServerPort = 
+	Optional<String> grpcServerPort =
 			Optional.ofNullable(System.getenv("GRPC_SERVER_PORT"));
     server = ServerBuilder.forPort(
     			grpcServerPort.isPresent() ? Integer.parseInt(grpcServerPort.get()) : port)
@@ -60,6 +62,12 @@ public class GrpcServiceServer
         .build()
         .start();
     logger.info("Server started, listening on " + port);
+
+    // Prometheus metrics HTTP server on port 9091
+    DefaultExports.initialize();
+    int metricsPort = Integer.parseInt(Optional.ofNullable(System.getenv("METRICS_PORT")).orElse("9091"));
+    new HTTPServer(metricsPort);
+    logger.info("Prometheus metrics endpoint started on port " + metricsPort);
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {

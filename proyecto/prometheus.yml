@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: frontend
+    static_configs:
+      - targets: ['ssdd-frontend:5010']
+    metrics_path: /metrics
+
+  - job_name: backend-rest
+    static_configs:
+      - targets: ['backend-rest:8080']
+    metrics_path: /Service/metrics
+
+  - job_name: backend-grpc
+    static_configs:
+      - targets: ['backend-grpc:9091']
+    metrics_path: /metrics

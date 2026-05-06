@@ -23,6 +23,7 @@ import es.um.sisdist.backend.dao.models.Message;
 import es.um.sisdist.backend.dao.models.User;
 import es.um.sisdist.backend.dao.models.utils.UserUtils;
 import es.um.sisdist.backend.dao.user.IUserDAO;
+import es.um.sisdist.backend.Service.kafka.KafkaEventProducer;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
@@ -156,7 +157,12 @@ public class AppLogicImpl
             UUID.randomUUID().toString(),
             System.currentTimeMillis());
 
-        return dialogueDAO.createDialogue(d) ? Optional.of(d) : Optional.empty();
+        if (dialogueDAO.createDialogue(d)) {
+            KafkaEventProducer.getInstance().send(d.getId(), "STARTED",
+                String.format("{\"user_id\":\"%s\",\"name\":\"%s\"}", userId, name));
+            return Optional.of(d);
+        }
+        return Optional.empty();
     }
 
     public Optional<Dialogue> createOrGetDialogue(String userId, String name)
@@ -208,6 +214,9 @@ public class AppLogicImpl
         d.setNextToken(newNextToken);
         dialogueDAO.updateDialogue(d);
 
+        KafkaEventProducer.getInstance().send(d.getId(), "PROMPT",
+            String.format("{\"prompt\":\"%s\"}", prompt.replace("\"", "\\\"")));
+
         // Llamada gRPC en background — cuando llegue la respuesta se persiste y el
         // diálogo vuelve a READY
         final String capturedJwt = jwt;
@@ -226,6 +235,8 @@ public class AppLogicImpl
 
                 msg.setAnswer(resp.getResponse());
                 messageDAO.updateMessage(msg);
+                KafkaEventProducer.getInstance().send(d.getId(), "ANSWER",
+                    String.format("{\"answer\":\"%s\"}", resp.getResponse().replace("\"", "\\\"")));
             }
             catch (Exception e)
             {
@@ -248,7 +259,9 @@ public class AppLogicImpl
         return dialogueDAO.getDialogueByUserAndName(userId, dname)
             .map(d -> {
                 d.setStatus("FINISHED");
-                return dialogueDAO.updateDialogue(d);
+                boolean ok = dialogueDAO.updateDialogue(d);
+                if (ok) KafkaEventProducer.getInstance().send(d.getId(), "ENDED", "{}");
+                return ok;
             })
             .orElse(false);
     }
