@@ -159,7 +159,8 @@ public class AppLogicImpl
 
         if (dialogueDAO.createDialogue(d)) {
             KafkaEventProducer.getInstance().send(d.getId(), "STARTED",
-                String.format("{\"user_id\":\"%s\",\"name\":\"%s\"}", userId, name));
+                "{\"user_id\":" + KafkaEventProducer.jsonString(userId)
+                + ",\"name\":" + KafkaEventProducer.jsonString(name) + "}");
             return Optional.of(d);
         }
         return Optional.empty();
@@ -215,7 +216,7 @@ public class AppLogicImpl
         dialogueDAO.updateDialogue(d);
 
         KafkaEventProducer.getInstance().send(d.getId(), "PROMPT",
-            String.format("{\"prompt\":\"%s\"}", prompt.replace("\"", "\\\"")));
+            "{\"prompt\":" + KafkaEventProducer.jsonString(prompt) + "}");
 
         // Llamada gRPC en background — cuando llegue la respuesta se persiste y el
         // diálogo vuelve a READY
@@ -236,7 +237,7 @@ public class AppLogicImpl
                 msg.setAnswer(resp.getResponse());
                 messageDAO.updateMessage(msg);
                 KafkaEventProducer.getInstance().send(d.getId(), "ANSWER",
-                    String.format("{\"answer\":\"%s\"}", resp.getResponse().replace("\"", "\\\"")));
+                    "{\"answer\":" + KafkaEventProducer.jsonString(resp.getResponse()) + "}");
             }
             catch (Exception e)
             {

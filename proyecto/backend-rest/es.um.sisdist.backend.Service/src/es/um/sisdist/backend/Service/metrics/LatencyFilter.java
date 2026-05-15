@@ -28,7 +28,8 @@ public class LatencyFilter implements ContainerRequestFilter, ContainerResponseF
         Long start = (Long) req.getProperty(START_TIME_KEY);
         if (start == null) return;
         double elapsedSeconds = (System.nanoTime() - start) / 1e9;
-        String uri = "/jaxrs" + req.getUriInfo().getPath();
+        String path = req.getUriInfo().getPath();
+        String uri = path.startsWith("/") ? "/jaxrs" + path : "/jaxrs/" + path;
         requestLatency.labels(uri, String.valueOf(resp.getStatus())).observe(elapsedSeconds);
     }
 }

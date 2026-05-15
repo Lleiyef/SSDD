@@ -8,6 +8,8 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -20,8 +22,14 @@ public class UsersEndpoint
     @GET
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getUserInfo(@PathParam("id") String id)
+    public Response getUserInfo(
+            @PathParam("id") String id,
+            @Context ContainerRequestContext ctx)
     {
+        String tokenUserId = (String) ctx.getProperty("userId");
+        if (tokenUserId == null || !tokenUserId.equals(id))
+            return Response.status(Response.Status.FORBIDDEN).build();
+
         return impl.getUserById(id)
             .map(user -> {
                 UserDTO dto = UserDTOUtils.toDTO(user);

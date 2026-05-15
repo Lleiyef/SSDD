@@ -1,10 +1,13 @@
 #! /usr/bin/env make -f
-SUBDIRS = frontend backend backend-grpc backend-rest
+SUBDIRS = frontend backend backend-grpc backend-rest backend-rest-externo
 
 all: $(SUBDIRS)
 
-run-devel:
-	docker-compose -f docker-compose-devel.yml up
+run-devel: $(SUBDIRS)
+	docker compose -f docker-compose-devel.yml up --build
+
+run: $(SUBDIRS)
+	docker compose -f docker-compose.yml up --build
 
 containers: $(SUBDIRS)
 	for i in $(SUBDIRS); do \
@@ -23,9 +26,12 @@ backend-grpc:
 backend-rest:
 	$(MAKE) -C $@
 
+backend-rest-externo:
+	$(MAKE) -C $@
+
 clean:
 	for i in $(SUBDIRS); do \
 		$(MAKE) -C $$i $@; \
 	done
 
-.PHONY: all run-devel containers frontend backend backend-grpc backend-rest clean
+.PHONY: all run-devel run containers frontend backend backend-grpc backend-rest backend-rest-externo clean

@@ -177,7 +177,7 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
         responseObserver.onCompleted();
     }
 
-    /** Extrae el valor de un campo JSON string con soporte de escapes básicos. */
+    /** Extrae el valor de un campo JSON string con soporte de escapes Unicode. */
     private static String extractJsonField(String json, String key) {
         int keyIdx = json.indexOf("\"" + key + "\"");
         if (keyIdx < 0) return null;
@@ -189,11 +189,23 @@ class GrpcServiceImpl extends GrpcServiceGrpc.GrpcServiceImplBase {
             char c = json.charAt(pos);
             if (c == '\\' && pos + 1 < json.length()) {
                 char next = json.charAt(pos + 1);
-                if (next == '"') sb.append('"');
-                else if (next == 'n') sb.append('\n');
-                else if (next == '\\') sb.append('\\');
-                else { sb.append('\\'); sb.append(next); }
-                pos += 2;
+                if (next == '"') { sb.append('"'); pos += 2; }
+                else if (next == '\\') { sb.append('\\'); pos += 2; }
+                else if (next == '/') { sb.append('/'); pos += 2; }
+                else if (next == 'n') { sb.append('\n'); pos += 2; }
+                else if (next == 't') { sb.append('\t'); pos += 2; }
+                else if (next == 'r') { sb.append('\r'); pos += 2; }
+                else if (next == 'b') { sb.append('\b'); pos += 2; }
+                else if (next == 'f') { sb.append('\f'); pos += 2; }
+                else if (next == 'u' && pos + 5 < json.length()) {
+                    try {
+                        sb.append((char) Integer.parseInt(json.substring(pos + 2, pos + 6), 16));
+                        pos += 6;
+                    } catch (NumberFormatException ex) {
+                        sb.append('\\').append(next);
+                        pos += 2;
+                    }
+                } else { sb.append('\\').append(next); pos += 2; }
             } else if (c == '"') {
                 break;
             } else {

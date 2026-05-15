@@ -90,10 +90,10 @@ public class TestClient {
         System.out.println("  Status: " + promptResp.getStatus());
         promptResp.close();
 
-        // 6. Polling hasta READY (máx 120s)
+        // 6. Polling hasta READY (máx 300s, igual que el timeout interno gRPC)
         System.out.println("\n[6] Polling respuesta...");
         String answer = null;
-        for (int i = 0; i < 120; i++) {
+        for (int i = 0; i < 300; i++) {
             Thread.sleep(1000);
             @SuppressWarnings("unchecked")
             Map<String, Object> poll = root.path("Service/jaxrs/u/" + userId + "/dialogue/" + dname)
@@ -126,8 +126,26 @@ public class TestClient {
         System.out.println("  Total conversaciones: " + list.size());
         list.forEach(d2 -> System.out.println("    - " + d2.get("name") + " [" + d2.get("status") + "]"));
 
-        // 8. Eliminar la conversación de prueba
-        System.out.println("\n[8] Eliminar diálogo " + dname);
+        // 8. Cerrar la conversación (transición a FINISHED)
+        System.out.println("\n[8] Cerrar diálogo (estado FINISHED): " + dname);
+        Response endResp = root.path("Service/jaxrs/u/" + userId + "/dialogue/" + dname + "/end")
+            .request()
+            .header("Authorization", "Bearer " + token)
+            .post(Entity.json(""));
+        System.out.println("  Status /end: " + endResp.getStatus());
+        endResp.close();
+
+        // Confirmar que el estado quedó en FINISHED
+        @SuppressWarnings("unchecked")
+        Map<String, Object> finished = root.path("Service/jaxrs/u/" + userId + "/dialogue/" + dname)
+            .request(MediaType.APPLICATION_JSON)
+            .header("Authorization", "Bearer " + token)
+            .get(Map.class);
+        System.out.println("  Estado tras /end: " + finished.get("status"));
+        assert "FINISHED".equals(finished.get("status")) : "El diálogo debería estar FINISHED";
+
+        // 9. Eliminar la conversación de prueba
+        System.out.println("\n[9] Eliminar diálogo " + dname);
         Response delResp = root.path("Service/jaxrs/u/" + userId + "/dialogue/" + dname)
             .request()
             .header("Authorization", "Bearer " + token)

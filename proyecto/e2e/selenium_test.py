@@ -18,7 +18,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5010")
 TEST_EMAIL   = os.environ.get("TEST_EMAIL", "dsevilla@um.es")
 TEST_PASS    = os.environ.get("TEST_PASS", "admin")
-WAIT_TIMEOUT = int(os.environ.get("WAIT_TIMEOUT", "120"))
+WAIT_TIMEOUT = int(os.environ.get("WAIT_TIMEOUT", "300"))
 
 
 class LlamaChatE2E(unittest.TestCase):
@@ -40,14 +40,16 @@ class LlamaChatE2E(unittest.TestCase):
 
     def test_01_login(self):
         """Accede al frontend, hace login y verifica redirección al índice."""
-        self.driver.get(f"{FRONTEND_URL}/login")
+        login_url = f"{FRONTEND_URL}/login"
+        self.driver.get(login_url)
         self.wait.until(EC.presence_of_element_located((By.NAME, "email")))
 
         self.driver.find_element(By.NAME, "email").send_keys(TEST_EMAIL)
         self.driver.find_element(By.NAME, "password").send_keys(TEST_PASS)
         self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
 
-        self.wait.until(EC.url_contains(FRONTEND_URL))
+        # Esperar a que el navegador se haya movido fuera de /login
+        self.wait.until(lambda d: "/login" not in d.current_url)
         self.assertNotIn("/login", self.driver.current_url)
 
     def test_02_navigate_to_chat(self):
@@ -59,11 +61,14 @@ class LlamaChatE2E(unittest.TestCase):
     def test_03_send_prompt_and_receive_response(self):
         """Envía un prompt y espera hasta que LlamaChat responda."""
         self.driver.get(f"{FRONTEND_URL}/chat")
-        self.wait.until(EC.presence_of_element_located((By.ID, "prompt")))
+        self.wait.until(EC.element_to_be_clickable((By.ID, "prompt")))
 
         prompt_input = self.driver.find_element(By.ID, "prompt")
         prompt_input.send_keys("Di hola en una palabra")
-        self.driver.find_element(By.ID, "send-btn").click()
+        send_btn = self.wait.until(EC.element_to_be_clickable((By.ID, "send-btn")))
+        # Asegurar visibilidad antes del click (algunos layouts ocultan parcialmente el botón)
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", send_btn)
+        self.driver.execute_script("arguments[0].click();", send_btn)
 
         # Esperar a que aparezca la respuesta real (sin clase 'loading')
         response_locator = (By.XPATH,
