@@ -27,7 +27,7 @@
             <span class="badge bg-secondary">{{ d.status }}</span>
           {% endif %}
         </td>
-        <td>{{ (d.createdAt / 1000) | int | string }}</td>
+        <td>{{ (d.createdAt / 1000) | int | datetimeformat }}</td>
         <td>
           <a href="{{ url_for('logs_detail', dname=d.name) }}" class="btn btn-sm btn-outline-primary">Ver</a>
           <form method="POST" action="{{ url_for('logs_delete', dname=d.name) }}" class="d-inline"

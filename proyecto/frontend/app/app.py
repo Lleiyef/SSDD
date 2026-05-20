@@ -2,6 +2,7 @@ import os
 import time
 import base64
 import json
+import datetime
 
 from flask import Flask, render_template, send_from_directory, url_for, request, redirect, session, jsonify
 from flask_login import LoginManager, current_user, login_user, login_required, logout_user
@@ -261,6 +262,12 @@ def api_poll_chat():
     except Exception:
         return jsonify({'status': 'error'}), 503
 
+@app.template_filter('datetimeformat')
+def datetimeformat(value):
+    import datetime
+    utc_time = datetime.datetime.utcfromtimestamp(value)
+    local_time = utc_time + datetime.timedelta(hours=2) #horario verano
+    return local_time.strftime('%d/%m/%Y %H:%M')
 
 @app.route('/logs')
 @login_required
