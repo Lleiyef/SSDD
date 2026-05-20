@@ -2,7 +2,7 @@
 {% block custom_style %}
 <style>
     .chat-container { max-width: 700px; margin: 40px auto; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.1); }
-    #chat-box { border: 1px solid #ccc; padding: 10px; height: 350px; overflow-y: scroll; margin-bottom: 15px; background: #fafafa; border-radius: 4px; }
+    #chat-box { border: 1px solid #ccc; padding: 10px; min-height: 350px; max-height: 600px; overflow-y: auto; margin-bottom: 15px; background: #fafafa; border-radius: 4px; }
     .msg { margin: 8px 0; padding: 10px; border-radius: 6px; }
     .user { background-color: #d1e7dd; color: #0f5132; text-align: right; margin-left: 20%; }
     .bot  { background-color: #e2e3e5; color: #41464c; margin-right: 20%; }

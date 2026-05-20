@@ -1,25 +1,33 @@
-# Compiled class file
+# Java
 *.class
-
-# Log file
-*.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
 *.jar
 *.war
-*.nar
 *.ear
+*.nar
 *.zip
 *.tar.gz
 *.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+target/
 hs_err_pid*
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+.pytest_cache/
+
+# Mac
+.DS_Store
+.AppleDouble
+
+# IDE
+.vscode/
+.idea/
+*.iml
 *.swp
+*.ctxt
+.mtj.tmp/
+
+# Logs
+*.log

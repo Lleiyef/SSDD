@@ -3,7 +3,6 @@
 <div class="mt-5">
   <h2>Estadísticas del sistema</h2>
   <p class="text-muted">Datos en tiempo real obtenidos de Prometheus.</p>
-
   <div class="row g-4 mt-2">
     <div class="col-md-4">
       <div class="card text-center shadow-sm h-100">
@@ -20,7 +19,6 @@
         </div>
       </div>
     </div>
-
     <div class="col-md-4">
       <div class="card text-center shadow-sm h-100">
         <div class="card-body">
@@ -36,7 +34,6 @@
         </div>
       </div>
     </div>
-
     <div class="col-md-4">
       <div class="card text-center shadow-sm h-100">
         <div class="card-body">
@@ -53,5 +50,17 @@
       </div>
     </div>
   </div>
+
+  <div class="mt-4 d-flex align-items-center gap-3">
+    <button onclick="location.reload()" class="btn btn-outline-secondary">
+      🔄 Actualizar métricas
+    </button>
+    <small class="text-muted">Última actualización: <span id="last-update"></span></small>
+  </div>
 </div>
+
+<script>
+  const now = new Date();
+  document.getElementById('last-update').textContent = now.toLocaleTimeString('es-ES');
+</script>
 {% endblock %}
