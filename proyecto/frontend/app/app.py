@@ -14,28 +14,42 @@ from prometheus_client import Counter
 from models import User
 from forms import LoginForm, SignupForm
 
+# -------------------------------------------------------
+# Inicialización de la aplicación Flask
+# -------------------------------------------------------
 app = Flask(__name__, static_url_path='')
 app.config['SECRET_KEY'] = 'qH1vprMjavek52cv7Lmfe1FoCexrrV8egFnB21jHhkuOHm8hJUe1hwn7pKEZQ1fioUzDb3sWcNK1pJVVIhyrgvFiIrceXpKJBFIn_i9-LTLBCc4cqaI3gjJJHU6kxuT8bnC7Ng'
 
+# Registra automáticamente métricas HTTP por endpoint (latencia, conteo)
 PrometheusMetrics(app)
+
+# Métrica de negocio personalizada: cuenta las conversaciones iniciadas
+# Visible en Prometheus con la expresión: conversations_started_total
 conversations_started = Counter(
     'conversations_started_total',
     'Total de conversaciones iniciadas'
 )
 
+# -------------------------------------------------------
+# Configuración de Flask-Login para autenticación stateless con JWT
+# -------------------------------------------------------
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# URL del backend REST (configurable por variable de entorno en Docker)
 REST_SERVER = os.environ.get('REST_SERVER', 'backend-rest')
 
 def backend_url(path):
+    """Construye la URL completa al backend REST."""
     return f"http://{REST_SERVER}:8080/Service/jaxrs{path}"
 
 def auth_headers():
+    """Devuelve la cabecera Authorization con el JWT de la sesión actual."""
     return {"Authorization": f"Bearer {session.get('jwt', '')}"}
 
 def decode_jwt_payload(token):
+    """Decodifica el payload del JWT (sin verificar firma) para extraer claims."""
     try:
         payload = token.split('.')[1]
         payload += '=' * (4 - len(payload) % 4)
@@ -44,6 +58,9 @@ def decode_jwt_payload(token):
         return {}
 
 
+# -------------------------------------------------------
+# Rutas estáticas y página principal
+# -------------------------------------------------------
 @app.route('/static/<path:path>')
 def serve_static(path):
     return send_from_directory('static', path)
@@ -54,6 +71,7 @@ def index():
 
 @login_manager.user_loader
 def load_user(user_id):
+    """Reconstruye el usuario desde la sesión Flask en cada petición."""
     jwt = session.get('jwt')
     if not jwt:
         return None
@@ -64,6 +82,9 @@ def load_user(user_id):
         jwt_token=jwt
     )
 
+# -------------------------------------------------------
+# Autenticación: login, signup y logout
+# -------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -74,6 +95,7 @@ def login():
 
     if request.method == 'POST' and form.validate():
         try:
+            # Petición de login al backend REST, que devuelve un JWT
             r = requests.post(
                 backend_url('/login'),
                 json={'email': form.email.data, 'password': form.password.data},
@@ -92,6 +114,7 @@ def login():
                 )
                 name = ur.json().get('name', email) if ur.status_code == 200 else email
 
+                # Almacenamos el JWT en la sesión Flask para reenviarlo en cada llamada
                 session['jwt'] = token
                 session['user_id'] = user_id
                 session['user_email'] = email
@@ -127,6 +150,7 @@ def signup():
                 timeout=5
             )
             if r.status_code == 201:
+                # Registro exitoso: hacemos login automático
                 lr = requests.post(
                     backend_url('/login'),
                     json={'email': form.email.data, 'password': form.password.data},
@@ -159,6 +183,7 @@ def signup():
 @app.route('/logout')
 @login_required
 def logout():
+    """Limpia la sesión y elimina el JWT almacenado."""
     session.pop('jwt', None)
     session.pop('user_id', None)
     session.pop('user_email', None)
@@ -167,16 +192,23 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
+# -------------------------------------------------------
+# Perfil de usuario
+# -------------------------------------------------------
 @app.route('/profile')
 @login_required
 def profile():
     return render_template('profile.html')
 
+# -------------------------------------------------------
+# Chat: creación de diálogo y envío de prompts
+# -------------------------------------------------------
 @app.route('/chat')
 @login_required
 def chat_view():
     user_id = session.get('user_id')
     if 'dialogue_name' not in session:
+        # Creamos un nuevo diálogo con nombre único basado en timestamp
         dname = f"chat-{int(time.time())}"
         try:
             requests.post(
@@ -188,12 +220,14 @@ def chat_view():
         except Exception:
             pass
         session['dialogue_name'] = dname
+        # Incrementamos el contador de conversaciones para Prometheus
         conversations_started.inc()
     return render_template('chat.html')
 
 @app.route('/api/send_chat', methods=['POST'])
 @login_required
 def api_send_chat():
+    """Recibe el prompt del usuario y lo envía al backend REST usando el token rotativo."""
     data = request.get_json()
     prompt = (data.get('prompt') or '').strip()
     if not prompt:
@@ -203,6 +237,7 @@ def api_send_chat():
     dname = session.get('dialogue_name')
 
     try:
+        # Obtenemos el nextToken del diálogo antes de enviar el prompt
         dr = requests.get(
             backend_url(f'/u/{user_id}/dialogue/{dname}'),
             headers=auth_headers(), timeout=5
@@ -212,6 +247,8 @@ def api_send_chat():
 
         dialogue = dr.json()
         next_token = dialogue.get('nextToken')
+
+        # Solo enviamos si el diálogo está en estado READY
         if dialogue.get('status') != 'READY':
             return jsonify({'error': 'El diálogo está ocupado'}), 409
 
@@ -236,6 +273,7 @@ def api_send_chat():
 @app.route('/api/poll_chat')
 @login_required
 def api_poll_chat():
+    """Polling del estado del diálogo. El frontend llama cada 2s hasta recibir status=READY."""
     user_id = session.get('user_id')
     dname = session.get('dialogue_name')
 
@@ -262,16 +300,23 @@ def api_poll_chat():
     except Exception:
         return jsonify({'status': 'error'}), 503
 
+# -------------------------------------------------------
+# Filtro de plantilla: convierte timestamp a fecha legible
+# Ajuste MANUAL UTC+2 para horario de verano (CEST, España)
+# -------------------------------------------------------
 @app.template_filter('datetimeformat')
 def datetimeformat(value):
-    import datetime
     utc_time = datetime.datetime.utcfromtimestamp(value)
-    local_time = utc_time + datetime.timedelta(hours=2) #horario verano
+    local_time = utc_time + datetime.timedelta(hours=2)
     return local_time.strftime('%d/%m/%Y %H:%M')
 
+# -------------------------------------------------------
+# Logs: historial de conversaciones
+# -------------------------------------------------------
 @app.route('/logs')
 @login_required
 def logs_view():
+    """Muestra todas las conversaciones del usuario autenticado."""
     user_id = session.get('user_id')
     try:
         r = requests.get(
@@ -286,6 +331,7 @@ def logs_view():
 @app.route('/logs/<dname>')
 @login_required
 def logs_detail(dname):
+    """Muestra el detalle de una conversación: todos sus mensajes y respuestas."""
     user_id = session.get('user_id')
     try:
         r = requests.get(
@@ -302,6 +348,7 @@ def logs_detail(dname):
 @app.route('/logs/<dname>/delete', methods=['POST'])
 @login_required
 def logs_delete(dname):
+    """Elimina una conversación del backend y limpia la sesión si era la activa."""
     user_id = session.get('user_id')
     try:
         requests.delete(
@@ -314,12 +361,17 @@ def logs_delete(dname):
         session.pop('dialogue_name', None)
     return redirect(url_for('logs_view'))
 
+# -------------------------------------------------------
+# Estadísticas: consulta métricas en tiempo real desde Prometheus
+# -------------------------------------------------------
 @app.route('/stats')
 @login_required
 def stats_view():
+    """Consulta tres métricas de Prometheus y las pasa a la plantilla stats.html."""
     prometheus = os.environ.get('PROMETHEUS_URL', 'http://prometheus:9090')
 
     def prom_query(q):
+        """Ejecuta una query PromQL y devuelve el valor escalar, o 'N/D' si falla."""
         try:
             r = requests.get(f'{prometheus}/api/v1/query', params={'query': q}, timeout=3)
             if r.status_code == 200:
@@ -331,12 +383,15 @@ def stats_view():
         return 'N/D'
 
     metrics = {
+        # Número total de conversaciones iniciadas (Counter de Prometheus)
         'conversations_total': prom_query('conversations_started_total'),
-        'avg_latency':         prom_query(
+        # Latencia media de los endpoints REST en segundos
+        'avg_latency': prom_query(
             'sum(http_server_requests_seconds_sum{uri=~"/jaxrs/.*"})'
             ' / sum(http_server_requests_seconds_count{uri=~"/jaxrs/.*"})'
         ),
-        'prompts_served':      prom_query(
+        # Total de prompts procesados correctamente (respuesta 201)
+        'prompts_served': prom_query(
             'sum(http_server_requests_seconds_count{uri=~".*next.*",status="201"})'
         ),
     }
