@@ -326,10 +326,12 @@ def stats_view():
     metrics = {
         'conversations_total': prom_query('conversations_started_total'),
         'avg_latency':         prom_query(
-            'rate(http_server_requests_seconds_sum{uri=~"/jaxrs/.*"}[5m])'
-            ' / rate(http_server_requests_seconds_count{uri=~"/jaxrs/.*"}[5m])'
+            'sum(http_server_requests_seconds_sum{uri=~"/jaxrs/.*"})'
+            ' / sum(http_server_requests_seconds_count{uri=~"/jaxrs/.*"})'
         ),
-        'active_dialogues':    prom_query('sum(ssdd_active_dialogues)'),
+        'prompts_served':      prom_query(
+            'sum(http_server_requests_seconds_count{uri=~".*next.*",status="201"})'
+        ),
     }
     return render_template('stats.html', metrics=metrics)
 

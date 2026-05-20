@@ -40,22 +40,18 @@
     <div class="col-md-4">
       <div class="card text-center shadow-sm h-100">
         <div class="card-body">
-          <div style="font-size:48px;">🟢</div>
-          <h5 class="card-title mt-2">Diálogos activos</h5>
+          <div style="font-size:48px;">✅</div>
+          <h5 class="card-title mt-2">Prompts atendidos</h5>
           <p class="display-6 fw-bold">
-            {% if metrics.active_dialogues == 'N/D' %}
+            {% if metrics.prompts_served == 'N/D' %}
               <span class="text-muted fs-4">N/D</span>
             {% else %}
-              {{ metrics.active_dialogues | float | round(0) | int }}
+              {{ metrics.prompts_served | float | round(0) | int }}
             {% endif %}
           </p>
         </div>
       </div>
     </div>
-  </div>
-
-  <div class="alert alert-warning mt-4">
-    Los datos aparecen como <strong>N/D</strong> hasta que Prometheus esté activo y los servicios exporten métricas (Fase 9).
   </div>
 </div>
 {% endblock %}
